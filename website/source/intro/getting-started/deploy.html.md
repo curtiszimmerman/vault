@@ -24,7 +24,7 @@ file for Vault is relatively simple. An example is shown below:
 
 ```javascript
 backend "consul" {
-  address = "demo.consul.io:80"
+  address = "127.0.0.1:8500"
   path = "vault"
 }
 
@@ -45,19 +45,21 @@ Within the configuration file, there are two primary configurations:
     API requests. In the example above we're listening on localhost port
     8200 without TLS.
 
-For now, copy and paste the configuration above. Change the `path`
-for Consul to something unique for you to make sure you don't overlap
-with anyone else following this guide. We'll use this demo cluster to
-learn how to deploy Vault.
+For now, copy and paste the configuration above to `example.hcl`. It will
+configure Vault to expect an instance of Consul running locally.
 
-~> **Warning:** The demo consul cluster deletes its data every 30 minutes.
-If this happens while you're learning to use Vault, you'll lose your data.
-Just restart Vault and start over, knowing you have another 30 minutes.
+Starting a local Consul instance takes only a few minutes. Just follow the
+[Consul Getting Started Guide](https://www.consul.io/intro/getting-started/install.html)
+up to the point where you have installed Consul and started it with this command:
+
+```shell
+$ consul agent -server -bootstrap-expect 1 -data-dir /tmp/consul
+```
 
 ## Starting the Server
 
 With the configuration in place, starting the server is simple, as
-shown below. Modify the `-config` flag to point to the the proper path
+shown below. Modify the `-config` flag to point to the proper path
 where you saved the configuration above.
 
 ```
@@ -78,6 +80,24 @@ upstart.
 You'll notice that you can't execute any commands. We don't have any
 auth information! When you first setup a Vault server, you have to start
 by _initializing_ it.
+
+On Linux, Vault may fail to start with the following error:
+
+```shell
+$ vault server -config=example.hcl
+Error initializing core: Failed to lock memory: cannot allocate memory
+
+This usually means that the mlock syscall is not available.
+Vault uses mlock to prevent memory from being swapped to
+disk. This requires root privileges as well as a machine
+that supports mlock. Please enable mlock on your system or
+disable Vault from using it. To disable Vault from using it,
+set the `disable_mlock` configuration option in your configuration
+file.
+```
+
+For guidance on dealing with this issue, see the discussion of
+`disable_mlock` in [Server Configuration](/docs/config/index.html).
 
 ## Initializing the Vault
 
@@ -157,8 +177,8 @@ Due to the nature of the algorithm, Vault doesn't know if it has the
 _correct_ key until the threshold is reached.
 
 Also notice that the unseal process is stateful. You can go to another
-computer, use `vault unseal`, and as long as its pointing to the same server,
-that other computer can continue the unseal process.. This is incredibly
+computer, use `vault unseal`, and as long as it's pointing to the same server,
+that other computer can continue the unseal process. This is incredibly
 important to the design of the unseal process: multiple people with multiple
 keys are required to unseal the Vault. The Vault can be unsealed from
 multiple computers and the keys should never be together. A single malicious
@@ -199,8 +219,4 @@ This is the basic knowledge necessary to deploy Vault into a real
 environment. Once the Vault is unsealed, you access it as you have
 throughout this getting started guide (which worked with an unsealed Vault).
 
-Congratulations! You now know all the basics to get started with Vault.
-
-Next, we have a page dedicated to
-[next steps](/intro/getting-started/next-steps.html) depending on
-what you'd like to achieve.
+Next, we have a [short tutorial](/intro/getting-started/apis.html) on using the HTTP APIs to authenticate and access secrets.

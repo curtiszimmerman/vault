@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/armon/go-metrics"
+	"github.com/hashicorp/vault/helper/uuid"
 	"github.com/hashicorp/vault/logical"
 )
 
@@ -34,11 +35,11 @@ const (
 	// minRevokeDelay is used to prevent an instant revoke on restore
 	minRevokeDelay = 5 * time.Second
 
-	// maxLeaseDuration is the maximum lease duration
-	maxLeaseDuration = 30 * 24 * time.Hour
+	// maxLeaseDuration is the default maximum lease duration
+	maxLeaseTTL = 30 * 24 * time.Hour
 
-	// defaultLeaseDuration is the lease duration used when no lease is specified
-	defaultLeaseDuration = maxLeaseDuration
+	// defaultLeaseDuration is the default lease duration used when no lease is specified
+	defaultLeaseTTL = maxLeaseTTL
 )
 
 // ExpirationManager is used by the Core to manage leases. Secrets
@@ -336,8 +337,7 @@ func (m *ExpirationManager) RenewToken(source string, token string,
 
 	// Attach the ClientToken
 	resp.Auth.ClientToken = token
-	resp.Auth.LeaseIncrement = 0
-	resp.Auth.LeaseIssue = time.Now().UTC()
+	resp.Auth.Increment = 0
 
 	// Update the lease entry
 	le.Auth = resp.Auth
@@ -366,17 +366,14 @@ func (m *ExpirationManager) Register(req *logical.Request, resp *logical.Respons
 		return "", err
 	}
 
-	// Setup some of the fields on auth
-	resp.Secret.LeaseIssue = time.Now().UTC()
-
 	// Create a lease entry
 	le := leaseEntry{
-		LeaseID:     path.Join(req.Path, generateUUID()),
+		LeaseID:     path.Join(req.Path, uuid.GenerateUUID()),
 		ClientToken: req.ClientToken,
 		Path:        req.Path,
 		Data:        resp.Data,
 		Secret:      resp.Secret,
-		IssueTime:   resp.Secret.LeaseIssue,
+		IssueTime:   time.Now().UTC(),
 		ExpireTime:  resp.Secret.ExpirationTime(),
 	}
 
@@ -403,16 +400,13 @@ func (m *ExpirationManager) Register(req *logical.Request, resp *logical.Respons
 func (m *ExpirationManager) RegisterAuth(source string, auth *logical.Auth) error {
 	defer metrics.MeasureSince([]string{"expire", "register-auth"}, time.Now())
 
-	// Setup some of the fields on auth
-	auth.LeaseIssue = time.Now().UTC()
-
 	// Create a lease entry
 	le := leaseEntry{
 		LeaseID:     path.Join(source, m.tokenStore.SaltID(auth.ClientToken)),
 		ClientToken: auth.ClientToken,
 		Auth:        auth,
 		Path:        source,
-		IssueTime:   auth.LeaseIssue,
+		IssueTime:   time.Now().UTC(),
 		ExpireTime:  auth.ExpirationTime(),
 	}
 
@@ -498,8 +492,8 @@ func (m *ExpirationManager) revokeEntry(le *leaseEntry) error {
 // renewEntry is used to attempt renew of an internal entry
 func (m *ExpirationManager) renewEntry(le *leaseEntry, increment time.Duration) (*logical.Response, error) {
 	secret := *le.Secret
-	secret.LeaseIssue = le.IssueTime
-	secret.LeaseIncrement = increment
+	secret.IssueTime = le.IssueTime
+	secret.Increment = increment
 	secret.LeaseID = ""
 
 	req := logical.RenewRequest(le.Path, &secret, le.Data)
@@ -513,8 +507,8 @@ func (m *ExpirationManager) renewEntry(le *leaseEntry, increment time.Duration) 
 // renewAuthEntry is used to attempt renew of an auth entry
 func (m *ExpirationManager) renewAuthEntry(le *leaseEntry, increment time.Duration) (*logical.Response, error) {
 	auth := *le.Auth
-	auth.LeaseIssue = le.IssueTime
-	auth.LeaseIncrement = increment
+	auth.IssueTime = le.IssueTime
+	auth.Increment = increment
 	auth.ClientToken = ""
 
 	req := logical.RenewAuthRequest(le.Path, &auth, nil)
@@ -642,7 +636,7 @@ func (l *leaseEntry) encode() ([]byte, error) {
 func (le *leaseEntry) renewable() error {
 	// If there is no entry, cannot review
 	if le == nil || le.ExpireTime.IsZero() {
-		return fmt.Errorf("lease not found")
+		return fmt.Errorf("lease not found or lease is not renewable")
 	}
 
 	// Determine if the lease is expired

@@ -17,7 +17,7 @@ the backend storage.
 Vault supports other backends in addition to "generic", and this feature
 in particular is what makes Vault unique. For example, the "aws" backend
 generates AWS access keys dynamically, on demand. Another example --
-this time of a backend that doesn't yet exist -- is a backend that
+this type of backend does not yet exist -- is a backend that
 reads and writes data directly to an
 [HSM](http://en.wikipedia.org/wiki/Hardware_security_module).
 As Vault matures, more and more backends will be added.
@@ -65,7 +65,7 @@ the Vault core system.
 
 Spend some time reading and writing secrets to the new mount point to
 convince yourself it works. As a bonus, write to the `secret/` endpoint
-and observe that those values unavailable via `generic/`: they share the
+and observe that those values are unavailable via `generic/`: they share the
 same backend, but do not share any data. In addition to this, backends
 (of the same type or otherwise) _cannot_ access the data of other backends;
 they can only access data within their mount point.

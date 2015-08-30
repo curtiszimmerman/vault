@@ -22,8 +22,8 @@ any read/write/delete is sent to the secret backend, and the secret
 backend can choose to react to that operation however it sees fit.
 
 For example, the "generic" backend passes through any operation back
-to the configured physical backend for Vault. A "read" turns into a
-"read" of the physical backend at the same path, a "write" turns into
+to the configured storage backend for Vault. A "read" turns into a
+"read" of the storage backend at the same path, a "write" turns into
 a write, etc. This is a lot like a normal filesystem.
 
 The "aws" backend, on the other hand, behaves differently. When you
@@ -56,7 +56,7 @@ with regards to mounting:
     were created at. The data stored for the backend won't be deleted.
 
 Once a secret backend is mounted, you can interact with it directly
-at its mount point according to its own API. You can use the `vault help`
+at its mount point according to its own API. You can use the `vault path-help`
 system to determine the paths it responds to.
 
 ## Barrier View

@@ -46,7 +46,7 @@ func (b *backend) pathLogin(
 
 	// If no trusted chain was found, client is not authenticated
 	if len(trustedChains) == 0 {
-		return logical.ErrorResponse("invalid certificate"), nil
+		return logical.ErrorResponse("invalid certificate or no client certificate supplied"), nil
 	}
 
 	// Match the trusted chain with the policy
@@ -61,11 +61,12 @@ func (b *backend) pathLogin(
 			Policies:    matched.Entry.Policies,
 			DisplayName: matched.Entry.DisplayName,
 			Metadata: map[string]string{
-				"cert_name": matched.Entry.Name,
+				"cert_name":   matched.Entry.Name,
+				"common_name": connState.PeerCertificates[0].Subject.CommonName,
 			},
 			LeaseOptions: logical.LeaseOptions{
 				Renewable: true,
-				Lease:     matched.Entry.Lease,
+				TTL:       matched.Entry.TTL,
 			},
 		},
 	}
@@ -151,12 +152,17 @@ func validateConnState(roots *x509.CertPool, cs *tls.ConnectionState) ([][]*x509
 	opts := x509.VerifyOptions{
 		Roots:         roots,
 		Intermediates: x509.NewCertPool(),
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
 	certs := cs.PeerCertificates
+	if len(certs) == 0 {
+		return nil, nil
+	}
 
-	for _, cert := range certs[1:] {
-		opts.Intermediates.AddCert(cert)
+	if len(certs) > 1 {
+		for _, cert := range certs[1:] {
+			opts.Intermediates.AddCert(cert)
+		}
 	}
 
 	chains, err := certs[0].Verify(opts)
@@ -181,5 +187,5 @@ func (b *backend) pathLoginRenew(
 		return nil, nil
 	}
 
-	return framework.LeaseExtend(cert.Lease, 0)(req, d)
+	return framework.LeaseExtend(cert.TTL, 0, false)(req, d)
 }

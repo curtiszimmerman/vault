@@ -77,6 +77,41 @@ func TestBackendHandleRequest(t *testing.T) {
 	}
 }
 
+func TestBackendHandleRequest_badwrite(t *testing.T) {
+	callback := func(req *logical.Request, data *FieldData) (*logical.Response, error) {
+		return &logical.Response{
+			Data: map[string]interface{}{
+				"value": data.Get("value").(bool),
+			},
+		}, nil
+	}
+
+	b := &Backend{
+		Paths: []*Path{
+			&Path{
+				Pattern: "foo/bar",
+				Fields: map[string]*FieldSchema{
+					"value": &FieldSchema{Type: TypeBool},
+				},
+				Callbacks: map[logical.Operation]OperationFunc{
+					logical.WriteOperation: callback,
+				},
+			},
+		},
+	}
+
+	_, err := b.HandleRequest(&logical.Request{
+		Operation: logical.WriteOperation,
+		Path:      "foo/bar",
+		Data:      map[string]interface{}{"value": "3false3"},
+	})
+
+	if err == nil {
+		t.Fatalf("should have thrown a conversion error")
+	}
+
+}
+
 func TestBackendHandleRequest_404(t *testing.T) {
 	callback := func(req *logical.Request, data *FieldData) (*logical.Response, error) {
 		return &logical.Response{
@@ -215,7 +250,7 @@ func TestBackendHandleRequest_renew(t *testing.T) {
 func TestBackendHandleRequest_renewExtend(t *testing.T) {
 	secret := &Secret{
 		Type:            "foo",
-		Renew:           LeaseExtend(0, 0),
+		Renew:           LeaseExtend(0, 0, false),
 		DefaultDuration: 5 * time.Minute,
 	}
 	b := &Backend{
@@ -223,8 +258,8 @@ func TestBackendHandleRequest_renewExtend(t *testing.T) {
 	}
 
 	req := logical.RenewRequest("/foo", secret.Response(nil, nil).Secret, nil)
-	req.Secret.LeaseIssue = time.Now().UTC()
-	req.Secret.LeaseIncrement = 1 * time.Hour
+	req.Secret.IssueTime = time.Now().UTC()
+	req.Secret.Increment = 1 * time.Hour
 	resp, err := b.HandleRequest(req)
 	if err != nil {
 		t.Fatalf("err: %s", err)
@@ -233,8 +268,8 @@ func TestBackendHandleRequest_renewExtend(t *testing.T) {
 		t.Fatal("should have secret")
 	}
 
-	if resp.Secret.Lease < 60*time.Minute || resp.Secret.Lease > 70*time.Minute {
-		t.Fatalf("bad: %s", resp.Secret.Lease)
+	if resp.Secret.TTL < 60*time.Minute || resp.Secret.TTL > 70*time.Minute {
+		t.Fatalf("bad: %s", resp.Secret.TTL)
 	}
 }
 
@@ -507,6 +542,16 @@ func TestFieldSchemaDefaultOrZero(t *testing.T) {
 		"default not set": {
 			&FieldSchema{Type: TypeString},
 			"",
+		},
+
+		"default duration set": {
+			&FieldSchema{Type: TypeDurationSecond, Default: 60},
+			60,
+		},
+
+		"default duration not set": {
+			&FieldSchema{Type: TypeDurationSecond},
+			0,
 		},
 	}
 

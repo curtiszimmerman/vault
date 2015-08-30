@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/hashicorp/vault/helper/uuid"
 	"github.com/hashicorp/vault/logical"
 )
 
@@ -21,7 +22,7 @@ const (
 	// barrier view for the backends.
 	backendBarrierPrefix = "logical/"
 
-	// systemBarrierPrefix is sthe prefix used for the
+	// systemBarrierPrefix is the prefix used for the
 	// system logical backend.
 	systemBarrierPrefix = "sys/"
 )
@@ -138,27 +139,27 @@ func (c *Core) mount(me *MountEntry) error {
 		me.Path += "/"
 	}
 
-	// Prevent protected paths from being unmounted
+	// Prevent protected paths from being mounted
 	for _, p := range protectedMounts {
 		if strings.HasPrefix(me.Path, p) {
-			return fmt.Errorf("cannot mount '%s'", me.Path)
+			return logical.CodedError(403, fmt.Sprintf("cannot mount '%s'", me.Path))
 		}
 	}
 
 	// Verify there is no conflicting mount
 	if match := c.router.MatchingMount(me.Path); match != "" {
-		return fmt.Errorf("existing mount at '%s'", match)
-	}
-
-	// Lookup the new backend
-	backend, err := c.newLogicalBackend(me.Type, nil)
-	if err != nil {
-		return err
+		return logical.CodedError(409, fmt.Sprintf("existing mount at %s", match))
 	}
 
 	// Generate a new UUID and view
-	me.UUID = generateUUID()
+	me.UUID = uuid.GenerateUUID()
 	view := NewBarrierView(c.barrier, backendBarrierPrefix+me.UUID+"/")
+
+	// Create the new backend
+	backend, err := c.newLogicalBackend(me.Type, view, nil)
+	if err != nil {
+		return err
+	}
 
 	// Update the mount table
 	newTable := c.mounts.Clone()
@@ -414,16 +415,17 @@ func (c *Core) setupMounts() error {
 			barrierPath = systemBarrierPrefix
 		}
 
-		backend, err = c.newLogicalBackend(entry.Type, nil)
+		// Create a barrier view using the UUID
+		view = NewBarrierView(c.barrier, barrierPath)
+
+		// Initialize the backend
+		backend, err = c.newLogicalBackend(entry.Type, view, nil)
 		if err != nil {
 			c.logger.Printf(
 				"[ERR] core: failed to create mount entry %#v: %v",
 				entry, err)
 			return loadMountsFailed
 		}
-
-		// Create a barrier view using the UUID
-		view = NewBarrierView(c.barrier, barrierPath)
 
 		if entry.Type == "system" {
 			c.systemView = view
@@ -454,18 +456,26 @@ func (c *Core) unloadMounts() error {
 }
 
 // newLogicalBackend is used to create and configure a new logical backend by name
-func (c *Core) newLogicalBackend(t string, conf map[string]string) (logical.Backend, error) {
+func (c *Core) newLogicalBackend(t string, view logical.Storage, conf map[string]string) (logical.Backend, error) {
 	f, ok := c.logicalBackends[t]
 	if !ok {
 		return nil, fmt.Errorf("unknown backend type: %s", t)
 	}
 
-	b, err := f(conf)
+	config := &logical.BackendConfig{
+		View:   view,
+		Logger: c.logger,
+		Config: conf,
+		System: &logical.StaticSystemView{
+			DefaultLeaseTTLVal: c.defaultLeaseTTL,
+			MaxLeaseTTLVal:     c.maxLeaseTTL,
+		},
+	}
+
+	b, err := f(config)
 	if err != nil {
 		return nil, err
 	}
-
-	b.SetLogger(c.logger)
 	return b, nil
 }
 
@@ -476,13 +486,13 @@ func defaultMountTable() *MountTable {
 		Path:        "secret/",
 		Type:        "generic",
 		Description: "generic secret storage",
-		UUID:        generateUUID(),
+		UUID:        uuid.GenerateUUID(),
 	}
 	sysMount := &MountEntry{
 		Path:        "sys/",
 		Type:        "system",
 		Description: "system endpoints used for control, policy and debugging",
-		UUID:        generateUUID(),
+		UUID:        uuid.GenerateUUID(),
 	}
 	table.Entries = append(table.Entries, genericMount)
 	table.Entries = append(table.Entries, sysMount)

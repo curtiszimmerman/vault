@@ -1,6 +1,9 @@
 package appId
 
 import (
+	"crypto/sha1"
+	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"strings"
@@ -27,6 +30,9 @@ func pathLogin(b *backend) *framework.Path {
 		Callbacks: map[logical.Operation]framework.OperationFunc{
 			logical.WriteOperation: b.pathLogin,
 		},
+
+		HelpSynopsis:    pathLoginSyn,
+		HelpDescription: pathLoginDesc,
 	}
 }
 
@@ -35,10 +41,18 @@ func (b *backend) pathLogin(
 	appId := data.Get("app_id").(string)
 	userId := data.Get("user_id").(string)
 
+	// Ensure both appId and userId are provided
+	if appId == "" || userId == "" {
+		return logical.ErrorResponse("missing 'app_id' or 'user_id'"), nil
+	}
+
 	// Look up the apps that this user is allowed to access
 	appsMap, err := b.MapUserId.Get(req.Storage, userId)
 	if err != nil {
 		return nil, err
+	}
+	if appsMap == nil {
+		return logical.ErrorResponse("invalid user ID or app ID"), nil
 	}
 
 	// If there is a CIDR block restriction, check that
@@ -69,8 +83,11 @@ func (b *backend) pathLogin(
 
 	// Verify that the app is in the list
 	found := false
+	appIdBytes := []byte(appId)
 	for _, app := range strings.Split(apps, ",") {
-		if strings.TrimSpace(app) == appId {
+		match := []byte(strings.TrimSpace(app))
+		// Protect against a timing attack with the app_id comparison
+		if subtle.ConstantTimeCompare(match, appIdBytes) == 1 {
 			found = true
 		}
 	}
@@ -78,14 +95,17 @@ func (b *backend) pathLogin(
 		return logical.ErrorResponse("invalid user ID or app ID"), nil
 	}
 
-	// Get the policies associated with the app
-	policies, err := b.MapAppId.Policies(req.Storage, appId)
+	// Get the raw data associated with the app
+	appRaw, err := b.MapAppId.Get(req.Storage, appId)
 	if err != nil {
 		return nil, err
 	}
+	if appRaw == nil {
+		return logical.ErrorResponse("invalid user ID or app ID"), nil
+	}
 
-	// Get the raw data associated with the app
-	appRaw, err := b.MapAppId.Get(req.Storage, appId)
+	// Get the policies associated with the app
+	policies, err := b.MapAppId.Policies(req.Storage, appId)
 	if err != nil {
 		return nil, err
 	}
@@ -96,10 +116,27 @@ func (b *backend) pathLogin(
 		displayName = raw.(string)
 	}
 
+	// Store hashes of the app ID and user ID for the metadata
+	appIdHash := sha1.Sum([]byte(appId))
+	userIdHash := sha1.Sum([]byte(userId))
+	metadata := map[string]string{
+		"app-id":  "sha1:" + hex.EncodeToString(appIdHash[:]),
+		"user-id": "sha1:" + hex.EncodeToString(userIdHash[:]),
+	}
+
 	return &logical.Response{
 		Auth: &logical.Auth{
 			DisplayName: displayName,
 			Policies:    policies,
+			Metadata:    metadata,
 		},
 	}, nil
 }
+
+const pathLoginSyn = `
+Log in with an App ID and User ID.
+`
+
+const pathLoginDesc = `
+This endpoint authenticates using an application ID, user ID and potential the IP address of the connecting client.
+`

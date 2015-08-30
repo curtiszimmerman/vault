@@ -15,7 +15,7 @@ The Consul secret backend for Vault generates
 API tokens dynamically based on Consul ACL policies.
 
 This page will show a quick start for this backend. For detailed documentation
-on every path, use `vault help` after mounting the backend.
+on every path, use `vault path-help` after mounting the backend.
 
 ## Quick Start
 
@@ -142,6 +142,11 @@ Permission denied
         <span class="param">policy</span>
         <span class="param-flags">required</span>
         The base64 encoded Consul ACL policy. This is documented in [more detail here](https://consul.io/docs/internals/acl.html).
+      </li>
+      <li>
+        <span class="param">lease</span>
+        <span class="param-flags">optional</span>
+        The lease value provided as a string duration with time suffix. Hour is the largest suffix.
       </li>
     </ul>
   </dd>

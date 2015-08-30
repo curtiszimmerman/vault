@@ -19,6 +19,7 @@ func TestRepositoriesService_List_authenticatedUser(t *testing.T) {
 
 	mux.HandleFunc("/user/repos", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "GET")
+		testHeader(t, r, "Accept", mediaTypeLicensesPreview)
 		fmt.Fprint(w, `[{"id":1},{"id":2}]`)
 	})
 
@@ -39,13 +40,13 @@ func TestRepositoriesService_List_specifiedUser(t *testing.T) {
 
 	mux.HandleFunc("/users/u/repos", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "GET")
+		testHeader(t, r, "Accept", mediaTypeLicensesPreview)
 		testFormValues(t, r, values{
 			"type":      "owner",
 			"sort":      "created",
 			"direction": "asc",
 			"page":      "2",
 		})
-
 		fmt.Fprint(w, `[{"id":1}]`)
 	})
 
@@ -72,6 +73,7 @@ func TestRepositoriesService_ListByOrg(t *testing.T) {
 
 	mux.HandleFunc("/orgs/o/repos", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "GET")
+		testHeader(t, r, "Accept", mediaTypeLicensesPreview)
 		testFormValues(t, r, values{
 			"type": "forks",
 			"page": "2",
@@ -191,7 +193,8 @@ func TestRepositoriesService_Get(t *testing.T) {
 
 	mux.HandleFunc("/repos/o/r", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "GET")
-		fmt.Fprint(w, `{"id":1,"name":"n","description":"d","owner":{"login":"l"}}`)
+		testHeader(t, r, "Accept", mediaTypeLicensesPreview)
+		fmt.Fprint(w, `{"id":1,"name":"n","description":"d","owner":{"login":"l"},"license":{"key":"mit"}}`)
 	})
 
 	repo, _, err := client.Repositories.Get("o", "r")
@@ -199,7 +202,7 @@ func TestRepositoriesService_Get(t *testing.T) {
 		t.Errorf("Repositories.Get returned error: %v", err)
 	}
 
-	want := &Repository{ID: Int(1), Name: String("n"), Description: String("d"), Owner: &User{Login: String("l")}}
+	want := &Repository{ID: Int(1), Name: String("n"), Description: String("d"), Owner: &User{Login: String("l")}, License: &License{Key: String("mit")}}
 	if !reflect.DeepEqual(repo, want) {
 		t.Errorf("Repositories.Get returned %+v, want %+v", repo, want)
 	}

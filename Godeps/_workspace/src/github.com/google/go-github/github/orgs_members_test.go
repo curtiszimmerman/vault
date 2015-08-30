@@ -19,8 +19,10 @@ func TestOrganizationsService_ListMembers(t *testing.T) {
 
 	mux.HandleFunc("/orgs/o/members", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "GET")
+		testHeader(t, r, "Accept", mediaTypeOrgPermissionPreview)
 		testFormValues(t, r, values{
 			"filter": "2fa_disabled",
+			"role":   "admin",
 			"page":   "2",
 		})
 		fmt.Fprint(w, `[{"id":1}]`)
@@ -29,6 +31,7 @@ func TestOrganizationsService_ListMembers(t *testing.T) {
 	opt := &ListMembersOptions{
 		PublicOnly:  false,
 		Filter:      "2fa_disabled",
+		Role:        "admin",
 		ListOptions: ListOptions{Page: 2},
 	}
 	members, _, err := client.Organizations.ListMembers("o", opt)
@@ -217,7 +220,6 @@ func TestOrganizationsService_ListOrgMemberships(t *testing.T) {
 
 	mux.HandleFunc("/user/memberships/orgs", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "GET")
-		testHeader(t, r, "Accept", mediaTypeMembershipPreview)
 		testFormValues(t, r, values{
 			"state": "active",
 			"page":  "2",
@@ -240,17 +242,16 @@ func TestOrganizationsService_ListOrgMemberships(t *testing.T) {
 	}
 }
 
-func TestOrganizationsService_GetOrgMembership(t *testing.T) {
+func TestOrganizationsService_GetOrgMembership_AuthenticatedUser(t *testing.T) {
 	setup()
 	defer teardown()
 
 	mux.HandleFunc("/user/memberships/orgs/o", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "GET")
-		testHeader(t, r, "Accept", mediaTypeMembershipPreview)
 		fmt.Fprint(w, `{"url":"u"}`)
 	})
 
-	membership, _, err := client.Organizations.GetOrgMembership("o")
+	membership, _, err := client.Organizations.GetOrgMembership("", "o")
 	if err != nil {
 		t.Errorf("Organizations.GetOrgMembership returned error: %v", err)
 	}
@@ -261,7 +262,27 @@ func TestOrganizationsService_GetOrgMembership(t *testing.T) {
 	}
 }
 
-func TestOrganizationsService_EditOrgMembership(t *testing.T) {
+func TestOrganizationsService_GetOrgMembership_SpecifiedUser(t *testing.T) {
+	setup()
+	defer teardown()
+
+	mux.HandleFunc("/orgs/o/memberships/u", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, "GET")
+		fmt.Fprint(w, `{"url":"u"}`)
+	})
+
+	membership, _, err := client.Organizations.GetOrgMembership("u", "o")
+	if err != nil {
+		t.Errorf("Organizations.GetOrgMembership returned error: %v", err)
+	}
+
+	want := &Membership{URL: String("u")}
+	if !reflect.DeepEqual(membership, want) {
+		t.Errorf("Organizations.GetOrgMembership returned %+v, want %+v", membership, want)
+	}
+}
+
+func TestOrganizationsService_EditOrgMembership_AuthenticatedUser(t *testing.T) {
 	setup()
 	defer teardown()
 
@@ -272,7 +293,6 @@ func TestOrganizationsService_EditOrgMembership(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(v)
 
 		testMethod(t, r, "PATCH")
-		testHeader(t, r, "Accept", mediaTypeMembershipPreview)
 		if !reflect.DeepEqual(v, input) {
 			t.Errorf("Request body = %+v, want %+v", v, input)
 		}
@@ -280,7 +300,7 @@ func TestOrganizationsService_EditOrgMembership(t *testing.T) {
 		fmt.Fprint(w, `{"url":"u"}`)
 	})
 
-	membership, _, err := client.Organizations.EditOrgMembership("o", input)
+	membership, _, err := client.Organizations.EditOrgMembership("", "o", input)
 	if err != nil {
 		t.Errorf("Organizations.EditOrgMembership returned error: %v", err)
 	}
@@ -288,5 +308,49 @@ func TestOrganizationsService_EditOrgMembership(t *testing.T) {
 	want := &Membership{URL: String("u")}
 	if !reflect.DeepEqual(membership, want) {
 		t.Errorf("Organizations.EditOrgMembership returned %+v, want %+v", membership, want)
+	}
+}
+
+func TestOrganizationsService_EditOrgMembership_SpecifiedUser(t *testing.T) {
+	setup()
+	defer teardown()
+
+	input := &Membership{State: String("active")}
+
+	mux.HandleFunc("/orgs/o/memberships/u", func(w http.ResponseWriter, r *http.Request) {
+		v := new(Membership)
+		json.NewDecoder(r.Body).Decode(v)
+
+		testMethod(t, r, "PATCH")
+		if !reflect.DeepEqual(v, input) {
+			t.Errorf("Request body = %+v, want %+v", v, input)
+		}
+
+		fmt.Fprint(w, `{"url":"u"}`)
+	})
+
+	membership, _, err := client.Organizations.EditOrgMembership("u", "o", input)
+	if err != nil {
+		t.Errorf("Organizations.EditOrgMembership returned error: %v", err)
+	}
+
+	want := &Membership{URL: String("u")}
+	if !reflect.DeepEqual(membership, want) {
+		t.Errorf("Organizations.EditOrgMembership returned %+v, want %+v", membership, want)
+	}
+}
+
+func TestOrganizationsService_RemoveOrgMembership(t *testing.T) {
+	setup()
+	defer teardown()
+
+	mux.HandleFunc("/orgs/o/memberships/u", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, "DELETE")
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	_, err := client.Organizations.RemoveOrgMembership("u", "o")
+	if err != nil {
+		t.Errorf("Organizations.RemoveOrgMembership returned error: %v", err)
 	}
 }

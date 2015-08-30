@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/mitchellh/cli"
@@ -48,6 +49,18 @@ func outputFormatTable(ui cli.Ui, s *api.Secret, whitespace bool) int {
 		input = append(input, fmt.Sprintf("lease_id %s %s", config.Delim, s.LeaseID))
 		input = append(input, fmt.Sprintf(
 			"lease_duration %s %d", config.Delim, s.LeaseDuration))
+		input = append(input, fmt.Sprintf(
+			"lease_renewable %s %s", config.Delim, strconv.FormatBool(s.Renewable)))
+	}
+
+	if s.Auth != nil {
+		input = append(input, fmt.Sprintf("token %s %s", config.Delim, s.Auth.ClientToken))
+		input = append(input, fmt.Sprintf("token_duration %s %d", config.Delim, s.Auth.LeaseDuration))
+		input = append(input, fmt.Sprintf("token_renewable %s %v", config.Delim, s.Auth.Renewable))
+		input = append(input, fmt.Sprintf("token_policies %s %v", config.Delim, s.Auth.Policies))
+		for k, v := range s.Auth.Metadata {
+			input = append(input, fmt.Sprintf("token_meta_%s %s %#v", k, config.Delim, v))
+		}
 	}
 
 	for k, v := range s.Data {

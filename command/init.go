@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/vault/api"
+	"github.com/hashicorp/vault/helper/pgpkeys"
 )
 
 // InitCommand is a Command that initializes a new Vault server.
@@ -13,11 +14,13 @@ type InitCommand struct {
 }
 
 func (c *InitCommand) Run(args []string) int {
-	var shares, threshold int
+	var threshold, shares int
+	var pgpKeys pgpkeys.PubKeyFilesFlag
 	flags := c.Meta.FlagSet("init", FlagSetDefault)
 	flags.Usage = func() { c.Ui.Error(c.Help()) }
 	flags.IntVar(&shares, "key-shares", 5, "")
 	flags.IntVar(&threshold, "key-threshold", 3, "")
+	flags.Var(&pgpKeys, "pgp-keys", "")
 	if err := flags.Parse(args); err != nil {
 		return 1
 	}
@@ -32,6 +35,7 @@ func (c *InitCommand) Run(args []string) int {
 	resp, err := client.Sys().Init(&api.InitRequest{
 		SecretShares:    shares,
 		SecretThreshold: threshold,
+		PGPKeys:         pgpKeys,
 	})
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf(
@@ -47,15 +51,14 @@ func (c *InitCommand) Run(args []string) int {
 
 	c.Ui.Output(fmt.Sprintf(
 		"\n"+
-			"Vault initialized with %d keys and a key threshold of %d!\n\n"+
-			"Please securely distribute the above keys. Whenever a Vault server\n"+
-			"is started, it must be unsealed with %d (the threshold) of the\n"+
-			"keys above (any of the keys, as long as the total number equals\n"+
-			"the threshold).\n\n"+
-			"Vault does not store the original master key. If you lose the keys\n"+
-			"above such that you no longer have the minimum number (the\n"+
-			"threshold), then your Vault will not be able to be unsealed.",
+			"Vault initialized with %d keys and a key threshold of %d. Please\n"+
+			"securely distribute the above keys. When the Vault is re-sealed,\n"+
+			"restarted, or stopped, you must provide at least %d of these keys\n"+
+			"to unseal it again.\n\n"+
+			"Vault does not store the master key. Without at least %d keys,\n"+
+			"your Vault will remain permanently sealed.",
 		shares,
+		threshold,
 		threshold,
 		threshold,
 	))
@@ -81,18 +84,7 @@ Usage: vault init [options]
 
 General Options:
 
-  -address=addr           The address of the Vault server.
-
-  -ca-cert=path           Path to a PEM encoded CA cert file to use to
-                          verify the Vault server SSL certificate.
-
-  -ca-path=path           Path to a directory of PEM encoded CA cert files
-                          to verify the Vault server SSL certificate. If both
-                          -ca-cert and -ca-path are specified, -ca-path is used.
-
-  -insecure               Do not verify TLS certificate. This is highly
-                          not recommended. This is especially not recommended
-                          for unsealing a vault.
+  ` + generalOptionsUsage() + `
 
 Init Options:
 
@@ -102,6 +94,14 @@ Init Options:
   -key-threshold=3        The number of key shares required to reconstruct
                           the master key.
 
+  -pgp-keys               If provided, must be a comma-separated list of
+                          files on disk containing binary-format public PGP
+                          keys. The number of files must match 'key-shares'.
+                          The output unseal keys will encrypted and hex-encoded,
+                          in order, with the given public keys.
+                          If you want to use them with the 'vault unseal'
+                          command, you will need to hex decode and decrypt;
+                          this will be the plaintext unseal key.
 `
 	return strings.TrimSpace(helpText)
 }

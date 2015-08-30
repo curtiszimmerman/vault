@@ -6,8 +6,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +32,7 @@ type ServerCommand struct {
 	CredentialBackends map[string]logical.Factory
 	LogicalBackends    map[string]logical.Factory
 
+	ShutdownCh <-chan struct{}
 	Meta
 }
 
@@ -73,6 +76,12 @@ func (c *ServerCommand) Run(args []string) int {
 		}
 	}
 
+	// Ensure that a backend is provided
+	if config.Backend == nil {
+		c.Ui.Error("A physical backend must be specified")
+		return 1
+	}
+
 	// If mlock isn't supported, show a warning. We disable this in
 	// dev because it is quite scary to see when first using Vault.
 	if !dev && !mlock.Supported() {
@@ -102,6 +111,18 @@ func (c *ServerCommand) Run(args []string) int {
 		return 1
 	}
 
+	// Attempt to detect the advertise address possible
+	if detect, ok := backend.(physical.AdvertiseDetect); ok && config.Backend.AdvertiseAddr == "" {
+		advertise, err := c.detectAdvertise(detect, config)
+		if err != nil {
+			c.Ui.Error(fmt.Sprintf("Error detecting advertise address: %s", err))
+		} else if advertise == "" {
+			c.Ui.Error("Failed to detect advertise address.")
+		} else {
+			config.Backend.AdvertiseAddr = advertise
+		}
+	}
+
 	// Initialize the core
 	core, err := vault.NewCore(&vault.CoreConfig{
 		AdvertiseAddr:      config.Backend.AdvertiseAddr,
@@ -111,6 +132,8 @@ func (c *ServerCommand) Run(args []string) int {
 		LogicalBackends:    c.LogicalBackends,
 		Logger:             logger,
 		DisableMlock:       config.DisableMlock,
+		MaxLeaseTTL:        config.MaxLeaseTTL,
+		DefaultLeaseTTL:    config.DefaultLeaseTTL,
 	})
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("Error initializing core: %s", err))
@@ -133,7 +156,7 @@ func (c *ServerCommand) Run(args []string) int {
 				"token has already been authenticated with the CLI, so you can\n"+
 				"immediately begin using the Vault CLI.\n\n"+
 				"The only step you need to take is to set the following\n"+
-				"environment variable since Vault will be talking without TLS:\n\n"+
+				"environment variables:\n\n"+
 				"    export VAULT_ADDR='http://127.0.0.1:8200'\n\n"+
 				"The unseal key and root token are reproduced below in case you\n"+
 				"want to seal/unseal the Vault or play with authentication.\n\n"+
@@ -156,6 +179,8 @@ func (c *ServerCommand) Run(args []string) int {
 	// If the backend supports HA, then note it
 	if _, ok := backend.(physical.HABackend); ok {
 		info["backend"] += " (HA available)"
+		info["advertise address"] = config.Backend.AdvertiseAddr
+		infoKeys = append(infoKeys, "advertise address")
 	}
 
 	// Initialize the telemetry
@@ -215,7 +240,14 @@ func (c *ServerCommand) Run(args []string) int {
 	// Release the log gate.
 	logGate.Flush()
 
-	<-make(chan struct{})
+	// Wait for shutdown
+	select {
+	case <-c.ShutdownCh:
+		c.Ui.Output("==> Vault shutdown triggered")
+		if err := core.Shutdown(); err != nil {
+			c.Ui.Error(fmt.Sprintf("Error with core shutdown: %s", err))
+		}
+	}
 	return 0
 }
 
@@ -254,6 +286,71 @@ func (c *ServerCommand) enableDev(core *vault.Core) (*vault.InitResult, error) {
 	return init, nil
 }
 
+// detectAdvertise is used to attempt advertise address detection
+func (c *ServerCommand) detectAdvertise(detect physical.AdvertiseDetect,
+	config *server.Config) (string, error) {
+	// Get the hostname
+	host, err := detect.DetectHostAddr()
+	if err != nil {
+		return "", err
+	}
+
+	// Default the port and scheme
+	scheme := "https"
+	port := 8200
+
+	// Attempt to detect overrides
+	for _, list := range config.Listeners {
+		// Only attempt TCP
+		if list.Type != "tcp" {
+			continue
+		}
+
+		// Check if TLS is disabled
+		if val, ok := list.Config["tls_disable"]; ok {
+			disable, err := strconv.ParseBool(val)
+			if err != nil {
+				return "", fmt.Errorf("tls_disable: %s", err)
+			}
+
+			if disable {
+				scheme = "http"
+			}
+		}
+
+		// Check for address override
+		addr, ok := list.Config["address"]
+		if !ok {
+			addr = "127.0.0.1:8200"
+		}
+
+		// Check for localhost
+		hostStr, portStr, err := net.SplitHostPort(addr)
+		if err != nil {
+			continue
+		}
+		if hostStr == "127.0.0.1" {
+			host = hostStr
+		}
+
+		// Check for custom port
+		listPort, err := strconv.Atoi(portStr)
+		if err != nil {
+			continue
+		}
+		port = listPort
+	}
+
+	// Build a URL
+	url := &url.URL{
+		Scheme: scheme,
+		Host:   fmt.Sprintf("%s:%d", host, port),
+	}
+
+	// Return the URL string
+	return url.String(), nil
+}
+
 // setupTelementry is used ot setup the telemetry sub-systems
 func (c *ServerCommand) setupTelementry(config *server.Config) error {
 	/* Setup telemetry
@@ -262,12 +359,21 @@ func (c *ServerCommand) setupTelementry(config *server.Config) error {
 	*/
 	inm := metrics.NewInmemSink(10*time.Second, time.Minute)
 	metrics.DefaultInmemSignal(inm)
+
+	var telConfig *server.Telemetry
+	if config.Telemetry == nil {
+		telConfig = &server.Telemetry{}
+	} else {
+		telConfig = config.Telemetry
+	}
+
 	metricsConf := metrics.DefaultConfig("vault")
+	metricsConf.EnableHostname = !telConfig.DisableHostname
 
 	// Configure the statsite sink
 	var fanout metrics.FanoutSink
-	if config.StatsiteAddr != "" {
-		sink, err := metrics.NewStatsiteSink(config.StatsiteAddr)
+	if telConfig.StatsiteAddr != "" {
+		sink, err := metrics.NewStatsiteSink(telConfig.StatsiteAddr)
 		if err != nil {
 			return err
 		}
@@ -275,8 +381,8 @@ func (c *ServerCommand) setupTelementry(config *server.Config) error {
 	}
 
 	// Configure the statsd sink
-	if config.StatsdAddr != "" {
-		sink, err := metrics.NewStatsdSink(config.StatsdAddr)
+	if telConfig.StatsdAddr != "" {
+		sink, err := metrics.NewStatsdSink(telConfig.StatsdAddr)
 		if err != nil {
 			return err
 		}
@@ -319,6 +425,10 @@ General Options:
   -config=<path>      Path to the configuration file or directory. This can be
                       specified multiple times. If it is a directory, all
                       files with a ".hcl" or ".json" suffix will be loaded.
+
+  -dev                Enables Dev mode. In this mode, Vault is completely
+                      in-memory and unsealed. Do not run the Dev server in
+                      production!
 
   -log-level=info     Log verbosity. Defaults to "info", will be outputted
                       to stderr.

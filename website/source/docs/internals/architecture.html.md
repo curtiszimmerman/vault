@@ -8,7 +8,7 @@ description: |-
 
 # Architecture
 
-Vault is a complex system that has many different pieces. To help both users and developers of Consul
+Vault is a complex system that has many different pieces. To help both users and developers of Vault
 build a mental model of how it works, this page documents the system architecture.
 
 ~> **Advanced Topic!** This page covers technical details
@@ -25,7 +25,7 @@ Before describing the architecture, we provide a glossary of terms to help
 clarify what is being discussed:
 
 * **Storage Backend** - A storage backend is responsible for durable storage of _encrypted_ data.
-  backends are not trusted by Vault and are only expected to provide durability. The storage
+  Backends are not trusted by Vault and are only expected to provide durability. The storage
   backend is configured when starting the Vault server.
 
 * **Barrier** - The barrier is cryptographic steel and concrete around the Vault. All data that
@@ -58,12 +58,12 @@ clarify what is being discussed:
   ACL policies.
 
 * **Secret** - A secret is the term for anything returned by Vault which contains confidential
-  or cryptographic material. Not all everything returned by Vault is a secret, for example
+  or cryptographic material. Not everything returned by Vault is a secret, for example
   system configuration, status information, or backend policies are not considered Secrets.
   Secrets always have an associated lease. This means clients cannot assume that the secret
   contents can be used indefinitely. Vault will revoke a secret at the end of the lease, and
   an operator may intervene to revoke the secret before the lease is over. This contract
-  between Vault and it's clients is critical, as it allows for changes in keys and policies
+  between Vault and its clients is critical, as it allows for changes in keys and policies
   without manual intervention.
 
 * **Server** - Vault depends on a long-running instance which operates as a server.
@@ -138,7 +138,7 @@ Once authenticated, requests are made providing the client token. The token is u
 to verify the client is authorized and to load the relevant policies. The policies
 are used to authorize the client request. The request is then routed to the secret backend,
 which is processed depending on the type of backend. If the backend returns a secret,
-the core registers it with the expiration manager and attaches the a lease ID.
+the core registers it with the expiration manager and attaches a lease ID.
 The lease ID is used by clients to renew or revoke their secret. If a client allows the
 lease to expire, the expiration manager automatically revokes the secret.
 

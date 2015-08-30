@@ -15,13 +15,16 @@ type TokenCreateCommand struct {
 }
 
 func (c *TokenCreateCommand) Run(args []string) int {
-	var displayName, lease string
+	var format string
+	var id, displayName, lease string
 	var orphan bool
 	var metadata map[string]string
 	var numUses int
 	var policies []string
 	flags := c.Meta.FlagSet("mount", FlagSetDefault)
+	flags.StringVar(&format, "format", "table", "")
 	flags.StringVar(&displayName, "display-name", "", "")
+	flags.StringVar(&id, "id", "", "")
 	flags.StringVar(&lease, "lease", "", "")
 	flags.BoolVar(&orphan, "orphan", false, "")
 	flags.IntVar(&numUses, "use-limit", 0, "")
@@ -48,6 +51,7 @@ func (c *TokenCreateCommand) Run(args []string) int {
 	}
 
 	secret, err := client.Auth().Token().Create(&api.TokenCreateRequest{
+		ID:          id,
 		Policies:    policies,
 		Metadata:    metadata,
 		Lease:       lease,
@@ -61,8 +65,7 @@ func (c *TokenCreateCommand) Run(args []string) int {
 		return 2
 	}
 
-	c.Ui.Output(secret.Auth.ClientToken)
-	return 0
+	return OutputSecret(c.Ui, format, secret)
 }
 
 func (c *TokenCreateCommand) Synopsis() string {
@@ -87,20 +90,14 @@ Usage: vault token-create [options]
 
 General Options:
 
-  -address=addr           The address of the Vault server.
-
-  -ca-cert=path           Path to a PEM encoded CA cert file to use to
-                          verify the Vault server SSL certificate.
-
-  -ca-path=path           Path to a directory of PEM encoded CA cert files
-                          to verify the Vault server SSL certificate. If both
-                          -ca-cert and -ca-path are specified, -ca-path is used.
-
-  -insecure               Do not verify TLS certificate. This is highly
-                          not recommended. This is especially not recommended
-                          for unsealing a vault.
+  ` + generalOptionsUsage() + `
 
 Token Options:
+
+  -id="7699125c-d8...."   The token value that clients will use to authenticate
+                          with vault. If not provided this defaults to a 36
+                          character UUID. A root token is required to specify 
+                          the ID of a token.
 
   -display-name="name"    A display name to associate with this token. This
                           is a non-security sensitive value used to help
@@ -121,6 +118,10 @@ Token Options:
 
   -use-limit=5            The number of times this token can be used until
                           it is automatically revoked.
+
+  -format=table           The format for output. By default it is a whitespace-
+                          delimited table. This can also be json.
+
 `
 	return strings.TrimSpace(helpText)
 }

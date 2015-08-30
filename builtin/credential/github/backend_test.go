@@ -14,19 +14,28 @@ func TestBackend_basic(t *testing.T) {
 		Backend:  Backend(),
 		Steps: []logicaltest.TestStep{
 			testAccStepConfig(t),
-			testAccMap(t),
-			testAccLogin(t),
+			testAccMap(t, "default", "root"),
+			testAccMap(t, "oWnErs", "root"),
+			testAccLogin(t, []string{"root"}),
+			testAccStepConfigWithBaseURL(t),
+			testAccMap(t, "default", "root"),
+			testAccMap(t, "oWnErs", "root"),
+			testAccLogin(t, []string{"root"}),
 		},
 	})
 }
 
 func testAccPreCheck(t *testing.T) {
 	if v := os.Getenv("GITHUB_TOKEN"); v == "" {
-		t.Fatal("GITHUB_USER must be set for acceptance tests")
+		t.Fatal("GITHUB_TOKEN must be set for acceptance tests")
 	}
 
 	if v := os.Getenv("GITHUB_ORG"); v == "" {
 		t.Fatal("GITHUB_ORG must be set for acceptance tests")
+	}
+
+	if v := os.Getenv("GITHUB_BASEURL"); v == "" {
+		t.Fatal("GITHUB_BASEURL must be set for acceptance tests (use 'https://api.github.com' if you don't know what you're doing)")
 	}
 }
 
@@ -40,17 +49,28 @@ func testAccStepConfig(t *testing.T) logicaltest.TestStep {
 	}
 }
 
-func testAccMap(t *testing.T) logicaltest.TestStep {
+func testAccStepConfigWithBaseURL(t *testing.T) logicaltest.TestStep {
 	return logicaltest.TestStep{
 		Operation: logical.WriteOperation,
-		Path:      "map/teams/default",
+		Path:      "config",
 		Data: map[string]interface{}{
-			"value": "foo",
+			"organization": os.Getenv("GITHUB_ORG"),
+			"base_url":     os.Getenv("GITHUB_BASEURL"),
 		},
 	}
 }
 
-func testAccLogin(t *testing.T) logicaltest.TestStep {
+func testAccMap(t *testing.T, k string, v string) logicaltest.TestStep {
+	return logicaltest.TestStep{
+		Operation: logical.WriteOperation,
+		Path:      "map/teams/" + k,
+		Data: map[string]interface{}{
+			"value": v,
+		},
+	}
+}
+
+func testAccLogin(t *testing.T, keys []string) logicaltest.TestStep {
 	return logicaltest.TestStep{
 		Operation: logical.WriteOperation,
 		Path:      "login",
@@ -59,6 +79,6 @@ func testAccLogin(t *testing.T) logicaltest.TestStep {
 		},
 		Unauthenticated: true,
 
-		Check: logicaltest.TestCheckAuth([]string{"foo"}),
+		Check: logicaltest.TestCheckAuth(keys),
 	}
 }

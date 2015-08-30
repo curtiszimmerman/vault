@@ -8,6 +8,12 @@ import (
 	"github.com/hashicorp/vault/logical"
 )
 
+// Helper which returns a generic regex string for creating endpoint patterns
+// that are identified by the given name in the backends
+func GenericNameRegex(name string) string {
+	return fmt.Sprintf("(?P<%s>\\w[\\w-]+\\w)", name)
+}
+
 // PathAppend is a helper for appending lists of paths into a single
 // list.
 func PathAppend(paths ...[]*Path) []*Path {
@@ -68,7 +74,13 @@ func (p *Path) helpCallback(
 	tplData.Request = req.Path
 	tplData.RoutePattern = p.Pattern
 	tplData.Synopsis = strings.TrimSpace(p.HelpSynopsis)
+	if tplData.Synopsis == "" {
+		tplData.Synopsis = "<no synopsis>"
+	}
 	tplData.Description = strings.TrimSpace(p.HelpDescription)
+	if tplData.Description == "" {
+		tplData.Description = "<no description>"
+	}
 
 	// Alphabetize the fields
 	fieldKeys := make([]string, 0, len(p.Fields))

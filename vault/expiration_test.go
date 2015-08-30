@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/vault/helper/uuid"
 	"github.com/hashicorp/vault/logical"
 )
 
@@ -21,7 +22,7 @@ func TestExpiration_Restore(t *testing.T) {
 	noop := &NoopBackend{}
 	_, barrier, _ := mockBarrier(t)
 	view := NewBarrierView(barrier, "logical/")
-	exp.router.Mount(noop, "prod/aws/", generateUUID(), view)
+	exp.router.Mount(noop, "prod/aws/", uuid.GenerateUUID(), view)
 
 	paths := []string{
 		"prod/aws/foo",
@@ -36,7 +37,7 @@ func TestExpiration_Restore(t *testing.T) {
 		resp := &logical.Response{
 			Secret: &logical.Secret{
 				LeaseOptions: logical.LeaseOptions{
-					Lease: 20 * time.Millisecond,
+					TTL: 20 * time.Millisecond,
 				},
 			},
 			Data: map[string]interface{}{
@@ -91,7 +92,7 @@ func TestExpiration_Register(t *testing.T) {
 	resp := &logical.Response{
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease: time.Hour,
+				TTL: time.Hour,
 			},
 		},
 		Data: map[string]interface{}{
@@ -124,7 +125,7 @@ func TestExpiration_RegisterAuth(t *testing.T) {
 	auth := &logical.Auth{
 		ClientToken: root.ID,
 		LeaseOptions: logical.LeaseOptions{
-			Lease: time.Hour,
+			TTL: time.Hour,
 		},
 	}
 
@@ -152,7 +153,7 @@ func TestExpiration_RegisterAuth_NoLease(t *testing.T) {
 
 	// Should not be able to renew, no expiration
 	_, err = exp.RenewToken("auth/github/login", root.ID, 0)
-	if err.Error() != "lease not found" {
+	if err.Error() != "lease not found or lease is not renewable" {
 		t.Fatalf("err: %v", err)
 	}
 
@@ -174,7 +175,7 @@ func TestExpiration_Revoke(t *testing.T) {
 	noop := &NoopBackend{}
 	_, barrier, _ := mockBarrier(t)
 	view := NewBarrierView(barrier, "logical/")
-	exp.router.Mount(noop, "prod/aws/", generateUUID(), view)
+	exp.router.Mount(noop, "prod/aws/", uuid.GenerateUUID(), view)
 
 	req := &logical.Request{
 		Operation: logical.ReadOperation,
@@ -183,7 +184,7 @@ func TestExpiration_Revoke(t *testing.T) {
 	resp := &logical.Response{
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease: time.Hour,
+				TTL: time.Hour,
 			},
 		},
 		Data: map[string]interface{}{
@@ -212,7 +213,7 @@ func TestExpiration_RevokeOnExpire(t *testing.T) {
 	noop := &NoopBackend{}
 	_, barrier, _ := mockBarrier(t)
 	view := NewBarrierView(barrier, "logical/")
-	exp.router.Mount(noop, "prod/aws/", generateUUID(), view)
+	exp.router.Mount(noop, "prod/aws/", uuid.GenerateUUID(), view)
 
 	req := &logical.Request{
 		Operation: logical.ReadOperation,
@@ -221,7 +222,7 @@ func TestExpiration_RevokeOnExpire(t *testing.T) {
 	resp := &logical.Response{
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease: 20 * time.Millisecond,
+				TTL: 20 * time.Millisecond,
 			},
 		},
 		Data: map[string]interface{}{
@@ -261,7 +262,7 @@ func TestExpiration_RevokePrefix(t *testing.T) {
 	noop := &NoopBackend{}
 	_, barrier, _ := mockBarrier(t)
 	view := NewBarrierView(barrier, "logical/")
-	exp.router.Mount(noop, "prod/aws/", generateUUID(), view)
+	exp.router.Mount(noop, "prod/aws/", uuid.GenerateUUID(), view)
 
 	paths := []string{
 		"prod/aws/foo",
@@ -276,7 +277,7 @@ func TestExpiration_RevokePrefix(t *testing.T) {
 		resp := &logical.Response{
 			Secret: &logical.Secret{
 				LeaseOptions: logical.LeaseOptions{
-					Lease: 20 * time.Millisecond,
+					TTL: 20 * time.Millisecond,
 				},
 			},
 			Data: map[string]interface{}{
@@ -321,7 +322,7 @@ func TestExpiration_RevokeByToken(t *testing.T) {
 	noop := &NoopBackend{}
 	_, barrier, _ := mockBarrier(t)
 	view := NewBarrierView(barrier, "logical/")
-	exp.router.Mount(noop, "prod/aws/", generateUUID(), view)
+	exp.router.Mount(noop, "prod/aws/", uuid.GenerateUUID(), view)
 
 	paths := []string{
 		"prod/aws/foo",
@@ -337,7 +338,7 @@ func TestExpiration_RevokeByToken(t *testing.T) {
 		resp := &logical.Response{
 			Secret: &logical.Secret{
 				LeaseOptions: logical.LeaseOptions{
-					Lease: 20 * time.Millisecond,
+					TTL: 20 * time.Millisecond,
 				},
 			},
 			Data: map[string]interface{}{
@@ -388,7 +389,7 @@ func TestExpiration_RenewToken(t *testing.T) {
 	auth := &logical.Auth{
 		ClientToken: root.ID,
 		LeaseOptions: logical.LeaseOptions{
-			Lease:     time.Hour,
+			TTL:       time.Hour,
 			Renewable: true,
 		},
 	}
@@ -419,7 +420,7 @@ func TestExpiration_RenewToken_NotRenewable(t *testing.T) {
 	auth := &logical.Auth{
 		ClientToken: root.ID,
 		LeaseOptions: logical.LeaseOptions{
-			Lease:     time.Hour,
+			TTL:       time.Hour,
 			Renewable: false,
 		},
 	}
@@ -440,7 +441,7 @@ func TestExpiration_Renew(t *testing.T) {
 	noop := &NoopBackend{}
 	_, barrier, _ := mockBarrier(t)
 	view := NewBarrierView(barrier, "logical/")
-	exp.router.Mount(noop, "prod/aws/", generateUUID(), view)
+	exp.router.Mount(noop, "prod/aws/", uuid.GenerateUUID(), view)
 
 	req := &logical.Request{
 		Operation: logical.ReadOperation,
@@ -449,7 +450,7 @@ func TestExpiration_Renew(t *testing.T) {
 	resp := &logical.Response{
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease:     20 * time.Millisecond,
+				TTL:       20 * time.Millisecond,
 				Renewable: true,
 			},
 		},
@@ -467,7 +468,7 @@ func TestExpiration_Renew(t *testing.T) {
 	noop.Response = &logical.Response{
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease: 20 * time.Millisecond,
+				TTL: 20 * time.Millisecond,
 			},
 		},
 		Data: map[string]interface{}{
@@ -502,7 +503,7 @@ func TestExpiration_Renew_NotRenewable(t *testing.T) {
 	noop := &NoopBackend{}
 	_, barrier, _ := mockBarrier(t)
 	view := NewBarrierView(barrier, "logical/")
-	exp.router.Mount(noop, "prod/aws/", generateUUID(), view)
+	exp.router.Mount(noop, "prod/aws/", uuid.GenerateUUID(), view)
 
 	req := &logical.Request{
 		Operation: logical.ReadOperation,
@@ -511,7 +512,7 @@ func TestExpiration_Renew_NotRenewable(t *testing.T) {
 	resp := &logical.Response{
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease:     20 * time.Millisecond,
+				TTL:       20 * time.Millisecond,
 				Renewable: false,
 			},
 		},
@@ -544,7 +545,7 @@ func TestExpiration_Renew_RevokeOnExpire(t *testing.T) {
 	noop := &NoopBackend{}
 	_, barrier, _ := mockBarrier(t)
 	view := NewBarrierView(barrier, "logical/")
-	exp.router.Mount(noop, "prod/aws/", generateUUID(), view)
+	exp.router.Mount(noop, "prod/aws/", uuid.GenerateUUID(), view)
 
 	req := &logical.Request{
 		Operation: logical.ReadOperation,
@@ -553,7 +554,7 @@ func TestExpiration_Renew_RevokeOnExpire(t *testing.T) {
 	resp := &logical.Response{
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease:     20 * time.Millisecond,
+				TTL:       20 * time.Millisecond,
 				Renewable: true,
 			},
 		},
@@ -571,7 +572,7 @@ func TestExpiration_Renew_RevokeOnExpire(t *testing.T) {
 	noop.Response = &logical.Response{
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease: 20 * time.Millisecond,
+				TTL: 20 * time.Millisecond,
 			},
 		},
 		Data: map[string]interface{}{
@@ -612,7 +613,7 @@ func TestExpiration_revokeEntry(t *testing.T) {
 	noop := &NoopBackend{}
 	_, barrier, _ := mockBarrier(t)
 	view := NewBarrierView(barrier, "logical/")
-	exp.router.Mount(noop, "", generateUUID(), view)
+	exp.router.Mount(noop, "", uuid.GenerateUUID(), view)
 
 	le := &leaseEntry{
 		LeaseID: "foo/bar/1234",
@@ -622,7 +623,7 @@ func TestExpiration_revokeEntry(t *testing.T) {
 		},
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease: time.Minute,
+				TTL: time.Minute,
 			},
 		},
 		IssueTime:  time.Now(),
@@ -661,7 +662,7 @@ func TestExpiration_revokeEntry_token(t *testing.T) {
 		Auth: &logical.Auth{
 			ClientToken: root.ID,
 			LeaseOptions: logical.LeaseOptions{
-				Lease: time.Minute,
+				TTL: time.Minute,
 			},
 		},
 		Path:       "foo/bar",
@@ -691,7 +692,7 @@ func TestExpiration_renewEntry(t *testing.T) {
 			Secret: &logical.Secret{
 				LeaseOptions: logical.LeaseOptions{
 					Renewable: true,
-					Lease:     time.Hour,
+					TTL:       time.Hour,
 				},
 			},
 			Data: map[string]interface{}{
@@ -701,7 +702,7 @@ func TestExpiration_renewEntry(t *testing.T) {
 	}
 	_, barrier, _ := mockBarrier(t)
 	view := NewBarrierView(barrier, "logical/")
-	exp.router.Mount(noop, "", generateUUID(), view)
+	exp.router.Mount(noop, "", uuid.GenerateUUID(), view)
 
 	le := &leaseEntry{
 		LeaseID: "foo/bar/1234",
@@ -711,7 +712,7 @@ func TestExpiration_renewEntry(t *testing.T) {
 		},
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease: time.Minute,
+				TTL: time.Minute,
 			},
 		},
 		IssueTime:  time.Now(),
@@ -740,10 +741,10 @@ func TestExpiration_renewEntry(t *testing.T) {
 	if !reflect.DeepEqual(req.Data, le.Data) {
 		t.Fatalf("Bad: %v", req)
 	}
-	if req.Secret.LeaseIncrement != time.Second {
+	if req.Secret.Increment != time.Second {
 		t.Fatalf("Bad: %v", req)
 	}
-	if req.Secret.LeaseIssue.IsZero() {
+	if req.Secret.IssueTime.IsZero() {
 		t.Fatalf("Bad: %v", req)
 	}
 }
@@ -756,14 +757,14 @@ func TestExpiration_renewAuthEntry(t *testing.T) {
 			Auth: &logical.Auth{
 				LeaseOptions: logical.LeaseOptions{
 					Renewable: true,
-					Lease:     time.Hour,
+					TTL:       time.Hour,
 				},
 			},
 		},
 	}
 	_, barrier, _ := mockBarrier(t)
 	view := NewBarrierView(barrier, "auth/foo/")
-	exp.router.Mount(noop, "auth/foo/", generateUUID(), view)
+	exp.router.Mount(noop, "auth/foo/", uuid.GenerateUUID(), view)
 
 	le := &leaseEntry{
 		LeaseID: "auth/foo/1234",
@@ -771,7 +772,10 @@ func TestExpiration_renewAuthEntry(t *testing.T) {
 		Auth: &logical.Auth{
 			LeaseOptions: logical.LeaseOptions{
 				Renewable: true,
-				Lease:     time.Minute,
+				TTL:       time.Minute,
+			},
+			InternalData: map[string]interface{}{
+				"MySecret": "secret",
 			},
 		},
 		IssueTime:  time.Now(),
@@ -797,10 +801,13 @@ func TestExpiration_renewAuthEntry(t *testing.T) {
 	if req.Path != "login" {
 		t.Fatalf("Bad: %v", req)
 	}
-	if req.Auth.LeaseIncrement != time.Second {
+	if req.Auth.Increment != time.Second {
 		t.Fatalf("Bad: %v", req)
 	}
-	if req.Auth.LeaseIssue.IsZero() {
+	if req.Auth.IssueTime.IsZero() {
+		t.Fatalf("Bad: %v", req)
+	}
+	if req.Auth.InternalData["MySecret"] != "secret" {
 		t.Fatalf("Bad: %v", req)
 	}
 }
@@ -815,7 +822,7 @@ func TestExpiration_PersistLoadDelete(t *testing.T) {
 		},
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease: time.Minute,
+				TTL: time.Minute,
 			},
 		},
 		IssueTime:  time.Now().UTC(),
@@ -856,7 +863,7 @@ func TestLeaseEntry(t *testing.T) {
 		},
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease: time.Minute,
+				TTL: time.Minute,
 			},
 		},
 		IssueTime:  time.Now().UTC(),

@@ -18,7 +18,7 @@ with the server over a TLS connection.
 In this page, we'll start and interact with the Vault server to understand
 how the server is started, and understanding the seal/unseal process.
 
-## Staring the Dev Server
+## Starting the Dev Server
 
 To start, we're going to start the Vault _dev server_. The dev server
 is a built-in flag to start a pre-configured server that is not very
@@ -37,7 +37,7 @@ token has already been authenticated with the CLI, so you can
 immediately begin using the Vault CLI.
 
 The only step you need to take is to set the following
-environment variable since Vault will be taking without TLS:
+environment variable since Vault will be talking without TLS:
 
     export VAULT_ADDR='http://127.0.0.1:8200'
 
@@ -93,6 +93,8 @@ Sealed: false
 Key Shares: 1
 Key Threshold: 1
 Unseal Progress: 0
+
+High-Availability Enabled: false
 ```
 
 If the output looks different, especially if the numbers are different

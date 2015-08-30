@@ -48,9 +48,9 @@ The following are not parts of the Vault threat model:
 
 * Protecting against arbitrary control of the storage backend. An attacker
   that can perform arbitrary operations against the storage backend can
-  undermine in any number of ways that are difficult or impossible to protect
+  undermine security in any number of ways that are difficult or impossible to protect
   against. As an example, an attacker could delete or corrupt all the contents
-  of the storage backend causing total data loss for Vault. The ability to controls
+  of the storage backend causing total data loss for Vault. The ability to control
   reads would allow an attacker to snapshot in a well-known state and rollback state
   changes if that would be beneficial to them.
 
@@ -110,8 +110,8 @@ a level of access granted to a path in Vault. When the policies are merged (if m
 policies are associated with a client), the highest access level permitted is used.
 For example, if the "engineering" policy permits read/write access to the "eng/" path,
 and the "ops" policy permits read access to the "ops/" path, then the user gets the
-union of those. Policy is matched using a longest-prefix match, which is the most
-specific defined policy.
+union of those. Policy is matched using the most specific defined policy, which may be
+an exact match or the longest-prefix match glob pattern.
 
 Certain operations are only permitted by "root" users, which is a distinguished
 policy built into Vault. This is similar to the concept of a root user on a Unix system

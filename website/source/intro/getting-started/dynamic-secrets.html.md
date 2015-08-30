@@ -27,7 +27,7 @@ use, minimizing the amount of time the secret existed.
 -> **Note:** Before starting this page, please register for an
 [AWS account](http://aws.amazon.com). We won't be using any features that
 cost money, so you shouldn't be charged for anything. However, we're not
-responsible for any charges that may incur.
+responsible for any charges you may incur.
 
 ## Mounting the AWS Backend
 
@@ -65,7 +65,12 @@ later. Notice you can't read it back:
 
 ```
 $ vault read aws/config/root
-TODO
+Error reading aws/config/root: Error making API request.
+
+URL: GET http://127.0.0.1:8200/v1/aws/config/root
+Code: 500. Errors:
+
+* unsupported operation
 ```
 
 To help keep the credentials secure, the AWS backend doesn't let you

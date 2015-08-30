@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/vault/api"
@@ -22,6 +24,11 @@ import (
 
 // EnvVaultAddress can be used to set the address of Vault
 const EnvVaultAddress = "VAULT_ADDR"
+const EnvVaultCACert = "VAULT_CACERT"
+const EnvVaultCAPath = "VAULT_CAPATH"
+const EnvVaultClientCert = "VAULT_CLIENT_CERT"
+const EnvVaultClientKey = "VAULT_CLIENT_KEY"
+const EnvVaultInsecure = "VAULT_SKIP_VERIFY"
 
 // FlagSetFlags is an enum to define what flags are present in the
 // default FlagSet returned by Meta.FlagSet.
@@ -44,10 +51,12 @@ type Meta struct {
 	ForceConfig  *Config // Force a config, don't load from disk
 
 	// These are set by the command line flags.
-	flagAddress  string
-	flagCACert   string
-	flagCAPath   string
-	flagInsecure bool
+	flagAddress    string
+	flagCACert     string
+	flagCAPath     string
+	flagClientCert string
+	flagClientKey  string
+	flagInsecure   bool
 
 	// These are internal and shouldn't be modified or access by anyone
 	// except Meta.
@@ -67,9 +76,27 @@ func (m *Meta) Client() (*api.Client, error) {
 	if m.ForceAddress != "" {
 		config.Address = m.ForceAddress
 	}
-
+	if v := os.Getenv(EnvVaultCACert); v != "" {
+		m.flagCACert = v
+	}
+	if v := os.Getenv(EnvVaultCAPath); v != "" {
+		m.flagCAPath = v
+	}
+	if v := os.Getenv(EnvVaultClientCert); v != "" {
+		m.flagClientCert = v
+	}
+	if v := os.Getenv(EnvVaultClientKey); v != "" {
+		m.flagClientKey = v
+	}
+	if v := os.Getenv(EnvVaultInsecure); v != "" {
+		var err error
+		m.flagInsecure, err = strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid value passed in for -insecure flag: %s", err)
+		}
+	}
 	// If we need custom TLS configuration, then set it
-	if m.flagCACert != "" || m.flagCAPath != "" || m.flagInsecure {
+	if m.flagCACert != "" || m.flagCAPath != "" || m.flagClientCert != "" || m.flagClientKey != "" || m.flagInsecure {
 		var certPool *x509.CertPool
 		var err error
 		if m.flagCACert != "" {
@@ -87,6 +114,16 @@ func (m *Meta) Client() (*api.Client, error) {
 			RootCAs:            certPool,
 		}
 
+		if m.flagClientCert != "" && m.flagClientKey != "" {
+			tlsCert, err := tls.LoadX509KeyPair(m.flagClientCert, m.flagClientKey)
+			if err != nil {
+				return nil, err
+			}
+			tlsConfig.Certificates = []tls.Certificate{tlsCert}
+		} else if m.flagClientCert != "" || m.flagClientKey != "" {
+			return nil, fmt.Errorf("Both client cert and client key must be provided")
+		}
+
 		client := *http.DefaultClient
 		client.Transport = &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
@@ -96,6 +133,24 @@ func (m *Meta) Client() (*api.Client, error) {
 			}).Dial,
 			TLSClientConfig:     tlsConfig,
 			TLSHandshakeTimeout: 10 * time.Second,
+		}
+
+		// From https://github.com/michiwend/gomusicbrainz/pull/4/files
+		defaultRedirectLimit := 30
+
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if len(via) > defaultRedirectLimit {
+				return fmt.Errorf("%d consecutive requests(redirects)", len(via))
+			}
+			if len(via) == 0 {
+				// No redirects
+				return nil
+			}
+			// mutate the subsequent redirect requests with the first Header
+			if token := via[0].Header.Get("X-Vault-Token"); len(token) != 0 {
+				req.Header.Set("X-Vault-Token", token)
+			}
+			return nil
 		}
 
 		config.HttpClient = &client
@@ -109,6 +164,11 @@ func (m *Meta) Client() (*api.Client, error) {
 
 	// If we have a token directly, then set that
 	token := m.ClientToken
+
+	// Try to set the token to what is already stored
+	if token == "" {
+		token = client.Token()
+	}
 
 	// If we don't have a token, check the token helper
 	if token == "" {
@@ -163,7 +223,10 @@ func (m *Meta) FlagSet(n string, fs FlagSetFlags) *flag.FlagSet {
 		f.StringVar(&m.flagAddress, "address", "", "")
 		f.StringVar(&m.flagCACert, "ca-cert", "", "")
 		f.StringVar(&m.flagCAPath, "ca-path", "", "")
+		f.StringVar(&m.flagClientCert, "client-cert", "", "")
+		f.StringVar(&m.flagClientKey, "client-key", "", "")
 		f.BoolVar(&m.flagInsecure, "insecure", false, "")
+		f.BoolVar(&m.flagInsecure, "tls-skip-verify", false, "")
 	}
 
 	// Create an io.Writer that writes to our Ui properly for errors.
@@ -219,6 +282,10 @@ func (m *Meta) loadCAPath(path string) (*x509.CertPool, error) {
 			return err
 		}
 
+		if info.IsDir() {
+			return nil
+		}
+
 		certs, err := m.loadCertFromPEM(path)
 		if err != nil {
 			return fmt.Errorf("Error loading %s: %s", path, err)
@@ -259,4 +326,37 @@ func (m *Meta) loadCertFromPEM(path string) ([]*x509.Certificate, error) {
 	}
 
 	return certs, nil
+}
+
+// generalOptionsUsage returns the usage documenation for commonly
+// available options
+func generalOptionsUsage() string {
+	general := `
+  -address=addr           The address of the Vault server.
+                          Overrides the VAULT_ADDR environment variable if set.
+
+  -ca-cert=path           Path to a PEM encoded CA cert file to use to
+                          verify the Vault server SSL certificate.
+                          Overrides the VAULT_CACERT environment variable if set.
+
+  -ca-path=path           Path to a directory of PEM encoded CA cert files
+                          to verify the Vault server SSL certificate. If both
+                          -ca-cert and -ca-path are specified, -ca-path is used.
+                          Overrides the VAULT_CAPATH environment variable if set.
+
+  -client-cert=path       Path to a PEM encoded client certificate for TLS
+                          authentication to the Vault server. Must also specify
+                          -client-key.  Overrides the VAULT_CLIENT_CERT
+                          environment variable if set.
+
+  -client-key=path        Path to an unencrypted PEM encoded private key
+                          matching the client certificate from -client-cert.
+                          Overrides the VAULT_CLIENT_KEY environment variable
+                          if set.
+
+  -tls-skip-verify        Do not verify TLS certificate. This is highly
+                          not recommended.  Verification will also be skipped
+                          if VAULT_SKIP_VERIFY is set.
+	`
+	return strings.TrimSpace(general)
 }

@@ -27,6 +27,10 @@
 
 						<li<%= sidebar_current("docs-internals-token") %>>
 							<a href="/docs/internals/token.html">Token Authentication</a>
+                        </li>
+
+						<li<%= sidebar_current("docs-internals-rotation") %>>
+							<a href="/docs/internals/rotation.html">Key Rotation</a>
 						</li>
 					</ul>
 				</li>
@@ -75,8 +79,8 @@
 				<li<%= sidebar_current("docs-commands") %>>
 					<a href="/docs/commands/index.html">Commands (CLI)</a>
 					<ul class="nav">
-						<li<%= sidebar_current("docs-commands-help") %>>
-							<a href="/docs/commands/help.html">Help</a>
+						<li<%= sidebar_current("docs-commands-path-help") %>>
+							<a href="/docs/commands/help.html">Path Help</a>
 						</li>
 
 						<li<%= sidebar_current("docs-commands-readwrite") %>>
@@ -102,12 +106,24 @@
 							<a href="/docs/secrets/consul/index.html">Consul</a>
 						</li>
 
+						<li<%= sidebar_current("docs-secrets-pki") %>>
+							<a href="/docs/secrets/pki/index.html">PKI (Certificates)</a>
+                        </li>
+
 						<li<%= sidebar_current("docs-secrets-postgresql") %>>
 							<a href="/docs/secrets/postgresql/index.html">PostgreSQL</a>
                         </li>
 
 						<li<%= sidebar_current("docs-secrets-mysql") %>>
 							<a href="/docs/secrets/mysql/index.html">MySQL</a>
+						</li>
+
+						<li<%= sidebar_current("docs-secrets-cassandra") %>>
+							<a href="/docs/secrets/cassandra/index.html">Cassandra</a>
+						</li>
+
+						<li<%= sidebar_current("docs-secrets-ssh") %>>
+							<a href="/docs/secrets/ssh/index.html">SSH</a>
 						</li>
 
 						<li<%= sidebar_current("docs-secrets-transit") %>>
@@ -145,6 +161,14 @@
 
 						<li<%= sidebar_current("docs-auth-cert") %>>
 							<a href="/docs/auth/cert.html">TLS Certificates</a>
+                        </li>
+
+						<li<%= sidebar_current("docs-auth-ldap") %>>
+							<a href="/docs/auth/ldap.html">LDAP</a>
+						</li>
+
+						<li<%= sidebar_current("docs-auth-mfa") %>>
+							<a href="/docs/auth/mfa.html">MFA</a>
 						</li>
 					</ul>
 				</li>

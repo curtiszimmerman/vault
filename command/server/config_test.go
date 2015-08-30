@@ -3,6 +3,7 @@ package server
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestLoadConfigFile(t *testing.T) {
@@ -29,9 +30,18 @@ func TestLoadConfigFile(t *testing.T) {
 			},
 		},
 
+		Telemetry: &Telemetry{
+			StatsdAddr:      "bar",
+			StatsiteAddr:    "foo",
+			DisableHostname: false,
+		},
+
 		DisableMlock: true,
-		StatsiteAddr: "foo",
-		StatsdAddr:   "bar",
+
+		MaxLeaseTTL:        10 * time.Hour,
+		MaxLeaseTTLRaw:     "10h",
+		DefaultLeaseTTL:    10 * time.Hour,
+		DefaultLeaseTTLRaw: "10h",
 	}
 	if !reflect.DeepEqual(config, expected) {
 		t.Fatalf("bad: %#v", config)
@@ -60,6 +70,17 @@ func TestLoadConfigFile_json(t *testing.T) {
 				"foo": "bar",
 			},
 		},
+
+		Telemetry: &Telemetry{
+			StatsiteAddr:    "baz",
+			StatsdAddr:      "",
+			DisableHostname: false,
+		},
+
+		MaxLeaseTTL:        10 * time.Hour,
+		MaxLeaseTTLRaw:     "10h",
+		DefaultLeaseTTL:    10 * time.Hour,
+		DefaultLeaseTTLRaw: "10h",
 	}
 	if !reflect.DeepEqual(config, expected) {
 		t.Fatalf("bad: %#v", config)
@@ -88,6 +109,12 @@ func TestLoadConfigFile_json2(t *testing.T) {
 				"foo": "bar",
 			},
 		},
+
+		Telemetry: &Telemetry{
+			StatsiteAddr:    "foo",
+			StatsdAddr:      "bar",
+			DisableHostname: true,
+		},
 	}
 	if !reflect.DeepEqual(config, expected) {
 		t.Fatalf("bad: %#v", config)
@@ -101,6 +128,8 @@ func TestLoadConfigDir(t *testing.T) {
 	}
 
 	expected := &Config{
+		DisableMlock: true,
+
 		Listeners: []*Listener{
 			&Listener{
 				Type: "tcp",
@@ -116,6 +145,15 @@ func TestLoadConfigDir(t *testing.T) {
 				"foo": "bar",
 			},
 		},
+
+		Telemetry: &Telemetry{
+			StatsiteAddr:    "qux",
+			StatsdAddr:      "baz",
+			DisableHostname: true,
+		},
+
+		MaxLeaseTTL:     10 * time.Hour,
+		DefaultLeaseTTL: 10 * time.Hour,
 	}
 	if !reflect.DeepEqual(config, expected) {
 		t.Fatalf("bad: %#v", config)

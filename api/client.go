@@ -4,13 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"os"
-	"time"
+	"strings"
 )
-
-const AuthCookieName = "token"
 
 var (
 	errRedirect = errors.New("redirect")
@@ -24,11 +21,8 @@ type Config struct {
 	// HttpClient.
 	Address string
 
-	// HttpClient is the HTTP client to use. http.DefaultClient will be
-	// used if not specified. The HTTP client must have the cookie jar set
-	// to be able to store cookies, otherwise authentication (login) will
-	// not work properly. If the jar is nil, a default empty cookie jar
-	// will be set.
+	// HttpClient is the HTTP client to use, which will currently always be
+	// http.DefaultClient. This is used to control redirect behavior.
 	HttpClient *http.Client
 }
 
@@ -40,7 +34,25 @@ type Config struct {
 func DefaultConfig() *Config {
 	config := &Config{
 		Address:    "https://127.0.0.1:8200",
-		HttpClient: &http.Client{},
+		HttpClient: http.DefaultClient,
+	}
+
+	// From https://github.com/michiwend/gomusicbrainz/pull/4/files
+	defaultRedirectLimit := 30
+
+	config.HttpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) > defaultRedirectLimit {
+			return fmt.Errorf("%d consecutive requests(redirects)", len(via))
+		}
+		if len(via) == 0 {
+			// No redirects
+			return nil
+		}
+		// mutate the subsequent redirect requests with the first Header
+		if token := via[0].Header.Get("X-Vault-Token"); len(token) != 0 {
+			req.Header.Set("X-Vault-Token", token)
+		}
+		return nil
 	}
 
 	if addr := os.Getenv("VAULT_ADDR"); addr != "" {
@@ -55,6 +67,7 @@ func DefaultConfig() *Config {
 type Client struct {
 	addr   *url.URL
 	config *Config
+	token  string
 }
 
 // NewClient returns a new client for the given configuration.
@@ -66,20 +79,6 @@ func NewClient(c *Config) (*Client, error) {
 	u, err := url.Parse(c.Address)
 	if err != nil {
 		return nil, err
-	}
-
-	// Make a copy of the HTTP client so we can configure it without
-	// affecting the original
-	//
-	// If no cookie jar is set on the client, we set a default empty
-	// cookie jar.
-	if c.HttpClient.Jar == nil {
-		jar, err := cookiejar.New(&cookiejar.Options{})
-		if err != nil {
-			return nil, err
-		}
-
-		c.HttpClient.Jar = jar
 	}
 
 	// Ensure redirects are not automatically followed
@@ -102,55 +101,36 @@ func NewClient(c *Config) (*Client, error) {
 // Token returns the access token being used by this client. It will
 // return the empty string if there is no token set.
 func (c *Client) Token() string {
-	r := c.NewRequest("GET", "/")
-	for _, cookie := range c.config.HttpClient.Jar.Cookies(r.URL) {
-		if cookie.Name == AuthCookieName {
-			return cookie.Value
-		}
-	}
-
-	return ""
+	return c.token
 }
 
 // SetToken sets the token directly. This won't perform any auth
 // verification, it simply sets the cookie properly for future requests.
 func (c *Client) SetToken(v string) {
-	r := c.NewRequest("GET", "/")
-	c.config.HttpClient.Jar.SetCookies(r.URL, []*http.Cookie{
-		&http.Cookie{
-			Name:    AuthCookieName,
-			Value:   v,
-			Path:    "/",
-			Expires: time.Now().Add(365 * 24 * time.Hour),
-		},
-	})
+	c.token = v
 }
 
 // ClearToken deletes the token cookie if it is set or does nothing otherwise.
 func (c *Client) ClearToken() {
-	r := c.NewRequest("GET", "/")
-	c.config.HttpClient.Jar.SetCookies(r.URL, []*http.Cookie{
-		&http.Cookie{
-			Name:    AuthCookieName,
-			Value:   "",
-			Expires: time.Now().Add(-1 * time.Hour),
-		},
-	})
+	c.token = ""
 }
 
 // NewRequest creates a new raw request object to query the Vault server
 // configured for this client. This is an advanced method and generally
 // doesn't need to be called externally.
 func (c *Client) NewRequest(method, path string) *Request {
-	return &Request{
+	req := &Request{
 		Method: method,
 		URL: &url.URL{
 			Scheme: c.addr.Scheme,
 			Host:   c.addr.Host,
 			Path:   path,
 		},
-		Params: make(map[string][]string),
+		ClientToken: c.token,
+		Params:      make(map[string][]string),
 	}
+
+	return req
 }
 
 // RawRequest performs the raw request given. This request may be against
@@ -170,9 +150,20 @@ START:
 		result = &Response{Response: resp}
 	}
 	if err != nil {
-		urlErr, ok := err.(*url.Error)
-		if ok && urlErr.Err == errRedirect {
+		if urlErr, ok := err.(*url.Error); ok && urlErr.Err == errRedirect {
 			err = nil
+		} else if strings.Contains(err.Error(), "tls: oversized") {
+			err = fmt.Errorf(
+				"%s\n\n"+
+					"This error usually means that the server is running with TLS disabled\n"+
+					"but the client is configured to use TLS. Please either enable TLS\n"+
+					"on the server or run the client with -address set to an address\n"+
+					"that uses the http protocol:\n\n"+
+					"    vault <command> -address http://<address>\n\n"+
+					"You can also set the VAULT_ADDR environment variable:\n\n\n"+
+					"    VAULT_ADDR=http://<address> vault <command>\n\n"+
+					"where <address> is replaced by the actual address to the server.",
+				err)
 		}
 	}
 	if err != nil {
@@ -191,10 +182,6 @@ START:
 		if req.URL.Scheme == "https" && respLoc.Scheme != "https" {
 			return result, fmt.Errorf("redirect would cause protocol downgrade")
 		}
-
-		// Copy the cookies so that our client auth transfers
-		cookies := c.config.HttpClient.Jar.Cookies(r.URL)
-		c.config.HttpClient.Jar.SetCookies(respLoc, cookies)
 
 		// Update the request
 		r.URL = respLoc

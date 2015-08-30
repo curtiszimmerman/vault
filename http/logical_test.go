@@ -1,7 +1,8 @@
 package http
 
 import (
-	"net/http"
+	"bytes"
+	"io"
 	"reflect"
 	"testing"
 	"time"
@@ -17,16 +18,13 @@ func TestLogical(t *testing.T) {
 	TestServerAuth(t, addr, token)
 
 	// WRITE
-	resp := testHttpPut(t, addr+"/v1/secret/foo", map[string]interface{}{
+	resp := testHttpPut(t, token, addr+"/v1/secret/foo", map[string]interface{}{
 		"data": "bar",
 	})
 	testResponseStatus(t, resp, 204)
 
 	// READ
-	resp, err := http.Get(addr + "/v1/secret/foo")
-	if err != nil {
-		t.Fatalf("err: %s", err)
-	}
+	resp = testHttpGet(t, token, addr+"/v1/secret/foo")
 
 	var actual map[string]interface{}
 	expected := map[string]interface{}{
@@ -45,13 +43,10 @@ func TestLogical(t *testing.T) {
 	}
 
 	// DELETE
-	resp = testHttpDelete(t, addr+"/v1/secret/foo")
+	resp = testHttpDelete(t, token, addr+"/v1/secret/foo")
 	testResponseStatus(t, resp, 204)
 
-	resp, err = http.Get(addr + "/v1/secret/foo")
-	if err != nil {
-		t.Fatalf("err: %s", err)
-	}
+	resp = testHttpGet(t, token, addr+"/v1/secret/foo")
 	testResponseStatus(t, resp, 404)
 }
 
@@ -61,10 +56,7 @@ func TestLogical_noExist(t *testing.T) {
 	defer ln.Close()
 	TestServerAuth(t, addr, token)
 
-	resp, err := http.Get(addr + "/v1/secret/foo")
-	if err != nil {
-		t.Fatalf("err: %s", err)
-	}
+	resp := testHttpGet(t, token, addr+"/v1/secret/foo")
 	testResponseStatus(t, resp, 404)
 }
 
@@ -109,17 +101,13 @@ func TestLogical_StandbyRedirect(t *testing.T) {
 	TestServerAuth(t, addr1, root)
 
 	// WRITE to STANDBY
-	resp := testHttpPut(t, addr2+"/v1/secret/foo", map[string]interface{}{
+	resp := testHttpPut(t, root, addr2+"/v1/secret/foo", map[string]interface{}{
 		"data": "bar",
 	})
 	testResponseStatus(t, resp, 307)
 
 	//// READ to standby
-	resp, err = http.Get(addr2 + "/v1/auth/token/lookup-self")
-	if err != nil {
-		t.Fatalf("err: %s", err)
-	}
-
+	resp = testHttpGet(t, root, addr2+"/v1/auth/token/lookup-self")
 	var actual map[string]interface{}
 	expected := map[string]interface{}{
 		"renewable":      false,
@@ -134,6 +122,7 @@ func TestLogical_StandbyRedirect(t *testing.T) {
 		},
 		"auth": nil,
 	}
+
 	testResponseStatus(t, resp, 200)
 	testResponseBody(t, resp, &actual)
 	delete(actual, "lease_id")
@@ -142,7 +131,7 @@ func TestLogical_StandbyRedirect(t *testing.T) {
 	}
 
 	//// DELETE to standby
-	resp = testHttpDelete(t, addr2+"/v1/secret/foo")
+	resp = testHttpDelete(t, root, addr2+"/v1/secret/foo")
 	testResponseStatus(t, resp, 307)
 }
 
@@ -153,7 +142,7 @@ func TestLogical_CreateToken(t *testing.T) {
 	TestServerAuth(t, addr, token)
 
 	// WRITE
-	resp := testHttpPut(t, addr+"/v1/auth/token/create", map[string]interface{}{
+	resp := testHttpPut(t, token, addr+"/v1/auth/token/create", map[string]interface{}{
 		"data": "bar",
 	})
 
@@ -176,9 +165,32 @@ func TestLogical_CreateToken(t *testing.T) {
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("bad: %#v %#v", actual, expected)
 	}
+}
 
-	// Should not get auth cookie
-	if cookies := resp.Cookies(); len(cookies) != 0 {
-		t.Fatalf("should not get cookies: %#v", cookies)
+func TestLogical_RawHTTP(t *testing.T) {
+	core, _, token := vault.TestCoreUnsealed(t)
+	ln, addr := TestServer(t, core)
+	defer ln.Close()
+	TestServerAuth(t, addr, token)
+
+	resp := testHttpPost(t, token, addr+"/v1/sys/mounts/foo", map[string]interface{}{
+		"type": "http",
+	})
+	testResponseStatus(t, resp, 204)
+
+	// Get the raw response
+	resp = testHttpGet(t, token, addr+"/v1/foo/raw")
+	testResponseStatus(t, resp, 200)
+
+	// Test the headers
+	if resp.Header.Get("Content-Type") != "plain/text" {
+		t.Fatalf("Bad: %#v", resp.Header)
+	}
+
+	// Get the body
+	body := new(bytes.Buffer)
+	io.Copy(body, resp.Body)
+	if string(body.Bytes()) != "hello world" {
+		t.Fatalf("Bad: %s", body.Bytes())
 	}
 }

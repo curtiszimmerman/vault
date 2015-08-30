@@ -2,6 +2,9 @@ package framework
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/mitchellh/mapstructure"
 )
@@ -13,6 +16,33 @@ import (
 type FieldData struct {
 	Raw    map[string]interface{}
 	Schema map[string]*FieldSchema
+}
+
+// Cycle through raw data and validate conversions in
+// the schema, so we don't get an error/panic later when
+// trying to get data out.  Data not in the schema is not
+// an error at this point, so we don't worry about it.
+func (d *FieldData) Validate() error {
+	for field, value := range d.Raw {
+
+		schema, ok := d.Schema[field]
+		if !ok {
+			continue
+		}
+
+		switch schema.Type {
+		case TypeBool, TypeInt, TypeMap, TypeDurationSecond, TypeString:
+			_, _, err := d.getPrimitive(field, schema)
+			if err != nil {
+				return fmt.Errorf("Error converting input %v for field %s", value, field)
+			}
+		default:
+			return fmt.Errorf("unknown field type %s for field %s",
+			    schema.Type, field)
+		}
+	}
+
+	return nil
 }
 
 // Get gets the value for the given field. If the key is an invalid field,
@@ -64,13 +94,7 @@ func (d *FieldData) GetOkErr(k string) (interface{}, bool, error) {
 	}
 
 	switch schema.Type {
-	case TypeBool:
-		fallthrough
-	case TypeInt:
-		fallthrough
-	case TypeMap:
-		fallthrough
-	case TypeString:
+	case TypeBool, TypeInt, TypeMap, TypeDurationSecond, TypeString:
 		return d.getPrimitive(k, schema)
 	default:
 		return nil, false,
@@ -114,6 +138,40 @@ func (d *FieldData) getPrimitive(
 		}
 
 		return result, true, nil
+
+	case TypeDurationSecond:
+		var result int
+		switch inp := raw.(type) {
+		case nil:
+			return nil, true, nil
+		case int:
+			result = inp
+		case float32:
+			result = int(inp)
+		case float64:
+			result = int(inp)
+		case string:
+			// Look for a suffix otherwise its a plain second value
+			if strings.HasSuffix(inp, "s") || strings.HasSuffix(inp, "m") || strings.HasSuffix(inp, "h") {
+				dur, err := time.ParseDuration(inp)
+				if err != nil {
+					return nil, true, err
+				}
+				result = int(dur.Seconds())
+			} else {
+				// Plain integer
+				val, err := strconv.ParseInt(inp, 10, 64)
+				if err != nil {
+					return nil, true, err
+				}
+				result = int(val)
+			}
+
+		default:
+			return nil, false, fmt.Errorf("invalid input '%v'", raw)
+		}
+		return result, true, nil
+
 	default:
 		panic(fmt.Sprintf("Unknown type: %s", schema.Type))
 	}

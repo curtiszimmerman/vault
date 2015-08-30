@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hashicorp/vault/helper/uuid"
 	"github.com/hashicorp/vault/logical"
 	"github.com/hashicorp/vault/logical/framework"
 	_ "github.com/lib/pq"
@@ -11,7 +12,7 @@ import (
 
 func pathRoleCreate(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: `creds/(?P<name>\w+)`,
+		Pattern: "creds/" + framework.GenericNameRegex("name"),
 		Fields: map[string]*framework.FieldSchema{
 			"name": &framework.FieldSchema{
 				Type:        framework.TypeString,
@@ -55,11 +56,11 @@ func (b *backend) pathRoleCreateRead(
 	if len(displayName) > 10 {
 		displayName = displayName[:10]
 	}
-	username := fmt.Sprintf("%s-%s", displayName, generateUUID())
+	username := fmt.Sprintf("%s-%s", displayName, uuid.GenerateUUID())
 	if len(username) > 16 {
 		username = username[:16]
 	}
-	password := generateUUID()
+	password := uuid.GenerateUUID()
 
 	// Get our connection
 	db, err := b.DB(req.Storage)
@@ -100,7 +101,7 @@ func (b *backend) pathRoleCreateRead(
 	}, map[string]interface{}{
 		"username": username,
 	})
-	resp.Secret.Lease = lease.Lease
+	resp.Secret.TTL = lease.Lease
 	return resp, nil
 }
 

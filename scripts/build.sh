@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # This script builds the application from source for multiple platforms.
 set -e
@@ -19,9 +19,14 @@ GIT_DIRTY=$(test -n "`git status --porcelain`" && echo "+CHANGES" || true)
 XC_ARCH=${XC_ARCH:-"386 amd64 arm"}
 XC_OS=${XC_OS:-linux darwin windows freebsd openbsd}
 
-# Install dependencies
-echo "==> Getting dependencies..."
-go get ./...
+# Store the original GOPATH so we can move the binary to it later
+ORIGINAL_GOPATH=${GOPATH:-$(go env GOPATH)}
+GOPATH="$(godep path):$ORIGINAL_GOPATH"
+case $(uname) in
+    CYGWIN*)
+        ORIGINAL_GOPATH="$(cygpath $ORIGINAL_GOPATH)"
+        ;;
+esac
 
 # Delete the old dir
 echo "==> Removing old directory..."
@@ -39,20 +44,16 @@ fi
 echo "==> Building..."
 gox \
     -os="${XC_OS}" \
+    -os="!freebsd" \
+    -os="!openbsd" \
     -arch="${XC_ARCH}" \
     -ldflags "-X github.com/hashicorp/vault/cli.GitCommit ${GIT_COMMIT}${GIT_DIRTY}" \
     -output "pkg/{{.OS}}_{{.Arch}}/vault" \
     .
 
 # Move all the compiled things to the $GOPATH/bin
-GOPATH=${GOPATH:-$(go env GOPATH)}
-case $(uname) in
-    CYGWIN*)
-        GOPATH="$(cygpath $GOPATH)"
-        ;;
-esac
 OLDIFS=$IFS
-IFS=: MAIN_GOPATH=($GOPATH)
+IFS=: MAIN_GOPATH=($ORIGINAL_GOPATH)
 IFS=$OLDIFS
 
 # Copy our OS/Arch to the bin/ directory

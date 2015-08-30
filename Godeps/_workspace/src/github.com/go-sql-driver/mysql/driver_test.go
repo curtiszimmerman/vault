@@ -780,6 +780,49 @@ func TestNULL(t *testing.T) {
 	})
 }
 
+func TestUint64(t *testing.T) {
+	const (
+		u0    = uint64(0)
+		uall  = ^u0
+		uhigh = uall >> 1
+		utop  = ^uhigh
+		s0    = int64(0)
+		sall  = ^s0
+		shigh = int64(uhigh)
+		stop  = ^shigh
+	)
+	runTests(t, dsn, func(dbt *DBTest) {
+		stmt, err := dbt.db.Prepare(`SELECT ?, ?, ? ,?, ?, ?, ?, ?`)
+		if err != nil {
+			dbt.Fatal(err)
+		}
+		defer stmt.Close()
+		row := stmt.QueryRow(
+			u0, uhigh, utop, uall,
+			s0, shigh, stop, sall,
+		)
+
+		var ua, ub, uc, ud uint64
+		var sa, sb, sc, sd int64
+
+		err = row.Scan(&ua, &ub, &uc, &ud, &sa, &sb, &sc, &sd)
+		if err != nil {
+			dbt.Fatal(err)
+		}
+		switch {
+		case ua != u0,
+			ub != uhigh,
+			uc != utop,
+			ud != uall,
+			sa != s0,
+			sb != shigh,
+			sc != stop,
+			sd != sall:
+			dbt.Fatal("Unexpected result value")
+		}
+	})
+}
+
 func TestLongData(t *testing.T) {
 	runTests(t, dsn, func(dbt *DBTest) {
 		var maxAllowedPacketSize int
@@ -1201,6 +1244,30 @@ func TestCollation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestColumnsWithAlias(t *testing.T) {
+	runTests(t, dsn+"&columnsWithAlias=true", func(dbt *DBTest) {
+		rows := dbt.mustQuery("SELECT 1 AS A")
+		defer rows.Close()
+		cols, _ := rows.Columns()
+		if len(cols) != 1 {
+			t.Fatalf("expected 1 column, got %d", len(cols))
+		}
+		if cols[0] != "A" {
+			t.Fatalf("expected column name \"A\", got \"%s\"", cols[0])
+		}
+		rows.Close()
+
+		rows = dbt.mustQuery("SELECT * FROM (SELECT 1 AS one) AS A")
+		cols, _ = rows.Columns()
+		if len(cols) != 1 {
+			t.Fatalf("expected 1 column, got %d", len(cols))
+		}
+		if cols[0] != "A.one" {
+			t.Fatalf("expected column name \"A.one\", got \"%s\"", cols[0])
+		}
+	})
 }
 
 func TestRawBytesResultExceedsBuffer(t *testing.T) {

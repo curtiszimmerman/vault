@@ -23,20 +23,64 @@ passwords from an external source.
 
 ```
 $ vault auth -method=userpass \
-  -var="username=foo" \
-  -var="password=bar"
-...
+  username=foo \
+  password=bar
 ```
 
 #### Via the API
 
-The endpoint for the login is `/login/USERNAME`.
+The endpoint for the login is `auth/userpass/login/<username>`.
+
+The password should be sent in the POST body encoded as JSON.
+
+```shell
+$ curl $VAULT_ADDR/v1/auth/userpass/login/mitchellh \
+    -d '{ "password": "foo" }'
+```
+
+The response will be in JSON. For example:
+
+```javascript
+{
+  "lease_id":"",
+  "renewable":false,
+  "lease_duration":0,
+  "data":null,
+  "auth":{
+    "client_token":"c4f280f6-fdb2-18eb-89d3-589e2e834cdb",
+    "policies":[
+      "root"
+    ],
+    "metadata":{
+      "username":"mitchellh"
+    },
+    "lease_duration":0,
+    "renewable":false
+  }
+}
+```
 
 ## Configuration
 
+First, you must enable the username/password auth backend:
+
+```
+$ vault auth-enable userpass
+Successfully enabled 'userpass' at 'userpass'!
+```
+
+Now when you run `vault auth -methods`, the username/password backend is
+available:
+
+```
+Path       Type      Description
+token/     token     token based credentials
+userpass/  userpass
+```
+
 To use the "userpass" auth backend, an operator must configure it with
 users that are allowed to authenticate. An example is shown below.
-Use `vault help` for more details.
+Use `vault path-help` for more details.
 
 ```
 $ vault write auth/userpass/users/mitchellh password=foo policies=root

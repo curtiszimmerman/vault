@@ -35,10 +35,11 @@ depending on user settings.
 
 Once the Vault is unsealed, every other operation requires
 a _client token_. A user may have a client token explicitly.
-The client token must be sent as the `token` cookie.
+The client token must be sent as the `token` cookie or the
+`X-Vault-Token` HTTP header.
 
 Otherwise, a client token can be retrieved via
-[authentication backends](#).
+[authentication backends](/docs/auth/index.html).
 
 Each authentication backend will have one or more unauthenticated
 login endpoints. These endpoints can be reached without any authentication,
@@ -46,9 +47,56 @@ and are used for authentication itself. These endpoints are specific
 to each authentication backend.
 
 Login endpoints for authentication backends that generate an identity
-will be sent down with a `Set-Cookie` header. If you are using a
+will be sent down with a `Set-Cookie` header as well as via JSON. If you have a
 well-behaved HTTP client, then authentication information will
 automatically be saved and sent to the Vault API.
+
+## Reading and Writing Secrets
+
+Reading a secret via the HTTP API is done by issuing a GET using the
+following URL:
+
+```text
+/v1/secret/foo
+```
+
+This maps to `secret/foo` where `foo` is the key in the `secret/` backend/
+
+Here is an example of reading a secret using cURL:
+
+```shell
+curl \
+  -H "X-Vault-Token: f3b09679-3001-009d-2b80-9c306ab81aa6" \
+  -X GET \
+   http://127.0.0.1:8200/v1/secret/foo
+```
+
+To write a secret, issue a POST on the following URL:
+
+```text
+/v1/secret/foo
+```
+
+with a JSON body like:
+
+```javascript
+{
+  "value": "bar"
+}
+```
+
+Here is an example of writing a secret using cURL:
+
+```shell
+curl \
+  -H "X-Vault-Token: f3b09679-3001-009d-2b80-9c306ab81aa6" \
+  -H "Content-Type: application/json" \
+  -X POST \
+  -d '{"value":"bar"}' \
+  http://127.0.0.1:8200/v1/secret/baz
+```
+
+For more examples, please look at the Vault API client.
 
 ## Help
 

@@ -9,14 +9,16 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func Factory(map[string]string) (logical.Backend, error) {
-	return Backend(), nil
+func Factory(conf *logical.BackendConfig) (logical.Backend, error) {
+	return Backend().Setup(conf)
 }
 
 func Backend() *framework.Backend {
 	var b backend
 	b.Map = &framework.PolicyMap{
-		PathMap:    framework.PathMap{Name: "teams"},
+		PathMap: framework.PathMap{
+			Name: "teams",
+		},
 		DefaultKey: "default",
 	}
 	b.Backend = &framework.Backend{

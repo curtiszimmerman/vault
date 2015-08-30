@@ -32,6 +32,14 @@ func Factory(conf map[string]string) (audit.Backend, error) {
 		Path:   path,
 		LogRaw: logRaw,
 	}
+
+	// Ensure that the file can be successfully opened for writing;
+	// otherwise it will be too late to catch later without problems
+	// (ref: https://github.com/hashicorp/vault/issues/550)
+	if err := b.open(); err != nil {
+		return nil, fmt.Errorf("sanity check failed; unable to open given path for writing")
+	}
+
 	return b, nil
 }
 
@@ -48,11 +56,22 @@ type Backend struct {
 	f    *os.File
 }
 
-func (b *Backend) LogRequest(auth *logical.Auth, req *logical.Request) error {
+func (b *Backend) LogRequest(auth *logical.Auth, req *logical.Request, outerErr error) error {
 	if err := b.open(); err != nil {
 		return err
 	}
 	if !b.LogRaw {
+		// Before we copy the structure we must nil out some data
+		// otherwise we will cause reflection to panic and die
+		if req.Connection != nil && req.Connection.ConnState != nil {
+			origReq := req
+			origState := req.Connection.ConnState
+			req.Connection.ConnState = nil
+			defer func() {
+				origReq.Connection.ConnState = origState
+			}()
+		}
+
 		// Copy the structures
 		cp, err := copystructure.Copy(auth)
 		if err != nil {
@@ -76,7 +95,7 @@ func (b *Backend) LogRequest(auth *logical.Auth, req *logical.Request) error {
 	}
 
 	var format audit.FormatJSON
-	return format.FormatRequest(b.f, auth, req)
+	return format.FormatRequest(b.f, auth, req, outerErr)
 }
 
 func (b *Backend) LogResponse(
@@ -88,6 +107,17 @@ func (b *Backend) LogResponse(
 		return err
 	}
 	if !b.LogRaw {
+		// Before we copy the structure we must nil out some data
+		// otherwise we will cause reflection to panic and die
+		if req.Connection != nil && req.Connection.ConnState != nil {
+			origReq := req
+			origState := req.Connection.ConnState
+			req.Connection.ConnState = nil
+			defer func() {
+				origReq.Connection.ConnState = origState
+			}()
+		}
+
 		// Copy the structure
 		cp, err := copystructure.Copy(auth)
 		if err != nil {
@@ -132,7 +162,7 @@ func (b *Backend) open() error {
 	}
 
 	var err error
-	b.f, err = os.OpenFile(b.Path, os.O_APPEND|os.O_WRONLY, 0600)
+	b.f, err = os.OpenFile(b.Path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
 		return err
 	}

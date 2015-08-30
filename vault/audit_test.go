@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"errors"
+
 	"github.com/hashicorp/vault/audit"
 	"github.com/hashicorp/vault/logical"
 )
@@ -16,6 +18,7 @@ type NoopAudit struct {
 	ReqErr  error
 	ReqAuth []*logical.Auth
 	Req     []*logical.Request
+	ReqErrs []error
 
 	RespErr  error
 	RespAuth []*logical.Auth
@@ -24,9 +27,10 @@ type NoopAudit struct {
 	RespErrs []error
 }
 
-func (n *NoopAudit) LogRequest(a *logical.Auth, r *logical.Request) error {
+func (n *NoopAudit) LogRequest(a *logical.Auth, r *logical.Request, err error) error {
 	n.ReqAuth = append(n.ReqAuth, a)
 	n.Req = append(n.Req, r)
+	n.ReqErrs = append(n.ReqErrs, err)
 	return n.ReqErr
 }
 
@@ -203,8 +207,9 @@ func TestAuditBroker_LogRequest(t *testing.T) {
 		Operation: logical.ReadOperation,
 		Path:      "sys/mounts",
 	}
+	reqErrs := errors.New("errs")
 
-	err := b.LogRequest(auth, req)
+	err := b.LogRequest(auth, req, reqErrs)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -216,17 +221,20 @@ func TestAuditBroker_LogRequest(t *testing.T) {
 		if !reflect.DeepEqual(a.Req[0], req) {
 			t.Fatalf("Bad: %#v", a.Req[0])
 		}
+		if !reflect.DeepEqual(a.ReqErrs[0], reqErrs) {
+			t.Fatalf("Bad: %#v", a.ReqErrs[0])
+		}
 	}
 
 	// Should still work with one failing backend
 	a1.ReqErr = fmt.Errorf("failed")
-	if err := b.LogRequest(auth, req); err != nil {
+	if err := b.LogRequest(auth, req, nil); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 
 	// Should FAIL work with both failing backends
 	a2.ReqErr = fmt.Errorf("failed")
-	if err := b.LogRequest(auth, req); err.Error() != "no audit backend succeeded in logging the request" {
+	if err := b.LogRequest(auth, req, nil); err.Error() != "no audit backend succeeded in logging the request" {
 		t.Fatalf("err: %v", err)
 	}
 }
@@ -254,7 +262,7 @@ func TestAuditBroker_LogResponse(t *testing.T) {
 	resp := &logical.Response{
 		Secret: &logical.Secret{
 			LeaseOptions: logical.LeaseOptions{
-				Lease: 1 * time.Hour,
+				TTL: 1 * time.Hour,
 			},
 		},
 		Data: map[string]interface{}{

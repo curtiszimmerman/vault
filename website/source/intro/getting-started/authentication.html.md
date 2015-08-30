@@ -10,14 +10,14 @@ description: |-
 
 Now that we know how to use the basics of Vault, it is important to understand
 how to authenticate to Vault itself. Up to this point, we haven't had to
-authenticate because starting the Vault sever in dev mode automatically logs
+authenticate because starting the Vault server in dev mode automatically logs
 us in as root. In practice, you'll almost always have to manually authenticate.
 
 On this page, we'll talk specifically about _authentication_. On the next
 page, we talk about _authorization_.
 Authentication is the mechanism of assigning an identity to a Vault user.
 The access control and permissions associated with an identity are
-authorization, and will not covered on this page.
+authorization, and will not be covered on this page.
 
 Vault has pluggable authentication backends, making it easy to authenticate
 with Vault using whatever form works best for your organization. On this page
@@ -96,7 +96,7 @@ Successfully enabled 'github' at 'github'!
 
 Auth backends are mounted, just like secret backends, except auth
 backends are always prefixed with `auth/`. So the GitHub backend we just
-mounted can be accessed at `auth/github`. You can use `vault help` to
+mounted can be accessed at `auth/github`. You can use `vault path-help` to
 learn more about it.
 
 With the backend enabled, we first have to configure it. For GitHub,

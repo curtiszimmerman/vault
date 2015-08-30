@@ -47,6 +47,11 @@ type Request struct {
 	// dynamic secrets with the source entity. This is not a sensitive
 	// name, but is useful for operators.
 	DisplayName string
+
+	// MountPoint is provided so that a logical backend can generate
+	// paths relative to itself. The `Path` is effectively the client
+	// request path with the MountPoint trimmed off.
+	MountPoint string
 }
 
 // Get returns a data field and guards for nil Data
@@ -140,6 +145,6 @@ var (
 	// ErrInvalidRequest is returned if the request is invalid
 	ErrInvalidRequest = errors.New("invalid request")
 
-	// ErrPermissionDeneid is returned if the client is not authorized
+	// ErrPermissionDenied is returned if the client is not authorized
 	ErrPermissionDenied = errors.New("permission denied")
 )
